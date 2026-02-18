@@ -1,0 +1,291 @@
+.harvest-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.harvest-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.harvest-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.harvest-header p {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin-top: 2px;
+}
+
+.harvest-filters {
+  display: flex;
+  gap: 10px;
+}
+
+.filter-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.filter-select select {
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Content Layout */
+.harvest-content {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 20px;
+  min-height: 600px;
+}
+
+/* Cluster List Panel */
+.cluster-list-panel {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.cluster-list-panel h3 {
+  font-size: 15px;
+  font-weight: 600;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.cluster-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.cluster-list-empty {
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.cluster-list-item {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-light);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.cluster-list-item:hover {
+  background: var(--bg-main);
+}
+
+.cluster-list-item.active {
+  background: #f0fdf4;
+  border-left: 3px solid var(--primary);
+}
+
+.cli-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.cli-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cli-stage {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.cli-stage--ready-to-harvest { background: #fef2f2; color: #dc2626; }
+.cli-stage--flowering { background: #fffbeb; color: #d97706; }
+.cli-stage--fruit-bearing { background: #eff6ff; color: #2563eb; }
+
+.cli-details {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.cli-details span {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.cli-yield {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 500;
+}
+
+/* Detail Panel */
+.cluster-detail-panel {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow-y: auto;
+}
+
+.detail-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 400px;
+  color: var(--text-light);
+  text-align: center;
+  gap: 12px;
+}
+
+.detail-empty h3 {
+  font-size: 18px;
+  color: var(--text-secondary);
+}
+
+.detail-empty p {
+  font-size: 14px;
+}
+
+.detail-content {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.detail-header h3 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.detail-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--primary-dark);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.detail-info-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.info-label {
+  font-size: 11px;
+  color: var(--text-light);
+  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.info-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Yield Summary Cards */
+.yield-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.yield-card {
+  background: var(--bg-main);
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.yield-card--predicted {
+  background: #eff6ff;
+}
+
+.yield-card--actual {
+  background: #f0fdf4;
+}
+
+.yield-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.yield-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* Charts */
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.chart-card {
+  background: var(--bg-main);
+  padding: 16px;
+  border-radius: var(--radius-sm);
+}
+
+.chart-card h5 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+}
+
+.chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 180px;
+  color: var(--text-light);
+  font-size: 13px;
+}
