@@ -170,9 +170,9 @@ export default function ClusterFormModal({ onClose, editData }) {
           <div className="form-group">
             <label>Plant Stage *</label>
             <select name="plantStage" value={form.plantStage} onChange={handleChange} required>
-              <option value="seed-sapling">Seed / Sapling</option>
+              <option value="seed-sapling">Sapling</option>
               <option value="tree">Tree</option>
-              <option value="flowering">Flowering / Fruit-bearing</option>
+              <option value="flowering">Flowering</option>
               <option value="ready-to-harvest">Ready to Harvest</option>
             </select>
           </div>

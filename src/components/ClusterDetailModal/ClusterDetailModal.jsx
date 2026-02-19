@@ -79,6 +79,7 @@ const STAGE_FIELDS = {
     { name: 'humidity', label: 'Average Monthly Humidity (%)', type: 'number' },
     { name: 'soilPh', label: 'Soil pH (0–14)', type: 'number', step: '0.1', min: '0', max: '14' },
     { name: 'estimatedFloweringDate', label: 'Estimated Flowering Date', type: 'date' },
+    { name: 'actualFloweringDate', label: 'Actual Flowering Date', type: 'date' },
   ],
   'ready-to-harvest': [
     { name: 'datePlanted', label: 'Date Planted', type: 'date' },

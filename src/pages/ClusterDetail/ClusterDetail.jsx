@@ -7,9 +7,9 @@ import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
 import './ClusterDetail.css'
 
 const STAGE_OPTIONS = [
-  { value: 'seed-sapling', label: 'Seed / Sapling' },
+  { value: 'seed-sapling', label: 'Sapling' },
   { value: 'tree', label: 'Tree' },
-  { value: 'flowering', label: 'Flowering / Fruit-bearing' },
+  { value: 'flowering', label: 'Flowering' },
   { value: 'ready-to-harvest', label: 'Ready to Harvest' },
 ]
 
@@ -31,16 +31,34 @@ const PESTICIDE_FREQ_OPTIONS = [
 const SHADE_TREE_OPTIONS = ['Yes', 'No']
 const AGRICLIMATIC_FIELD_NAMES = ['monthlyTemperature', 'rainfall', 'humidity', 'soilPh']
 const PRUNING_FUTURE_DATE_ERROR = 'Last Pruned Date cannot be set to a future date.'
+const PERCENT_TOLERANCE = 0.01
+const PERCENTAGE_TRIPLETS = [
+  {
+    first: 'gradeFine',
+    second: 'gradePremium',
+    last: 'gradeCommercial',
+    label: 'Grade Breakdown',
+  },
+  {
+    first: 'postGradeFine',
+    second: 'postGradePremium',
+    last: 'postGradeCommercial',
+    label: 'Post-Harvest Grade Breakdown',
+  },
+]
 
 const SECTION_FIELDS = {
   overview: [
     { name: 'datePlanted', label: 'Date Planted', type: 'date' },
     { name: 'numberOfPlants', label: 'Number of Plants', type: 'number' },
     { name: 'variety', label: 'Variety', type: 'select', options: VARIETY_OPTIONS },
+    { name: 'lastHarvestedDate', label: 'Last Harvested Date', type: 'date' },
     { name: 'monthlyTemperature', label: 'Average Monthly Temperature (°C)', type: 'number' },
     { name: 'rainfall', label: 'Average Monthly Rainfall (mm)', type: 'number' },
     { name: 'humidity', label: 'Average Monthly Humidity (%)', type: 'number' },
     { name: 'soilPh', label: 'Soil pH (0–14)', type: 'number', step: '0.1', min: '0', max: '14' },
+    { name: 'estimatedFloweringDate', label: 'Estimated Flowering Date', type: 'date' },
+    { name: 'actualFloweringDate', label: 'Actual Flowering Date', type: 'date' },
   ],
   harvest: [
     { name: 'lastHarvestedDate', label: 'Last Harvested Date', type: 'date' },
@@ -130,6 +148,71 @@ function formatDateLocal(date) {
   return `${year}-${month}-${day}`
 }
 
+function parsePercent(value) {
+  if (value === '' || value === null || value === undefined) return null
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function formatPercent(value) {
+  const rounded = Math.round(value * 100) / 100
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded.toFixed(2))
+}
+
+function applyAutoPercentages(formValues) {
+  const next = { ...formValues }
+
+  PERCENTAGE_TRIPLETS.forEach(({ first, second, last }) => {
+    const keys = [first, second, last]
+    const values = keys.map((key) => parsePercent(next[key]))
+    const filledIndexes = values
+      .map((value, index) => ({ value, index }))
+      .filter((entry) => entry.value !== null)
+
+    // Auto-compute only when exactly two values are present.
+    if (filledIndexes.length === 2) {
+      const missingIndex = [0, 1, 2].find((index) => values[index] === null)
+      const sumOfFilled = filledIndexes.reduce((sum, entry) => sum + entry.value, 0)
+      const remaining = 100 - sumOfFilled
+      const targetKey = keys[missingIndex]
+
+      if (remaining >= 0 && remaining <= 100) {
+        next[targetKey] = formatPercent(remaining)
+      } else {
+        next[targetKey] = ''
+      }
+    }
+  })
+
+  return next
+}
+
+function getPercentageValidationError(formValues) {
+  for (const { first, second, last, label } of PERCENTAGE_TRIPLETS) {
+    const firstVal = parsePercent(formValues[first])
+    const secondVal = parsePercent(formValues[second])
+    const lastVal = parsePercent(formValues[last])
+    const hasAnyValue = firstVal !== null || secondVal !== null || lastVal !== null
+
+    if (!hasAnyValue) continue
+
+    if (firstVal === null || secondVal === null || lastVal === null) {
+      return `${label}: complete all three percentage fields.`
+    }
+
+    if (firstVal < 0 || secondVal < 0 || lastVal < 0 || firstVal > 100 || secondVal > 100 || lastVal > 100) {
+      return `${label}: each value must be between 0 and 100.`
+    }
+
+    const total = firstVal + secondVal + lastVal
+    if (Math.abs(total - 100) > PERCENT_TOLERANCE) {
+      return `${label}: total must be exactly 100%.`
+    }
+  }
+
+  return ''
+}
+
 export default function ClusterDetail() {
   const { clusterId, section = 'overview' } = useParams()
   const navigate = useNavigate()
@@ -152,11 +235,34 @@ export default function ClusterDetail() {
   const isReadyToHarvest = cluster?.plantStage === 'ready-to-harvest'
   const isHarvestLocked = isHarvestSection && !isReadyToHarvest
   const isPruningSection = section === 'pruning'
+  const isFertilizeSection = section === 'fertilize'
   const isPruningLocked = isPruningSection && cluster?.plantStage === 'seed-sapling'
   const isSectionLocked = isHarvestLocked || isPruningLocked
   const todayDate = useMemo(() => formatDateLocal(new Date()), [])
 
-  const fields = useMemo(() => SECTION_FIELDS[section] || [], [section])
+  const fields = useMemo(() => {
+    const baseFields = SECTION_FIELDS[section] || []
+    if (section !== 'overview') return baseFields
+
+    const nextFields = baseFields.filter(
+      (field) =>
+        field.name !== 'estimatedFloweringDate' &&
+        field.name !== 'actualFloweringDate' &&
+        field.name !== 'lastHarvestedDate'
+    )
+
+    if (cluster?.plantStage === 'tree') {
+      const treeField = baseFields.find((field) => field.name === 'lastHarvestedDate')
+      if (treeField) nextFields.push(treeField)
+    } else if (cluster?.plantStage === 'flowering') {
+      const floweringField = baseFields.find((field) => field.name === 'estimatedFloweringDate')
+      if (floweringField) nextFields.push(floweringField)
+      const actualFloweringField = baseFields.find((field) => field.name === 'actualFloweringDate')
+      if (actualFloweringField) nextFields.push(actualFloweringField)
+    }
+
+    return nextFields
+  }, [section, cluster?.plantStage])
   const harvestFieldsByName = useMemo(
     () => Object.fromEntries(SECTION_FIELDS.harvest.map((field) => [field.name, field])),
     []
@@ -264,7 +370,7 @@ export default function ClusterDetail() {
       }
       nextForm[field.name] = cluster?.stageData?.[field.name] ?? ''
     })
-    return nextForm
+    return applyAutoPercentages(nextForm)
   }, [agriclimaticData, cluster?.plantCount, cluster?.stageData, fields, isOverviewSection])
 
   useEffect(() => {
@@ -302,9 +408,27 @@ export default function ClusterDetail() {
       setFormError(PRUNING_FUTURE_DATE_ERROR)
       return
     }
+    if (isFertilizeSection && name === 'soilPh') return
     if (isOverviewSection && AGRICLIMATIC_FIELD_NAMES.includes(e.target.name)) return
     setIsDirty(true)
-    setForm((prev) => ({ ...prev, [name]: value }))
+    setForm((prev) => {
+      const next = applyAutoPercentages({ ...prev, [name]: value })
+
+      const triplet = PERCENTAGE_TRIPLETS.find((group) =>
+        [group.first, group.second, group.last].includes(name)
+      )
+      if (triplet) {
+        const values = [triplet.first, triplet.second, triplet.last]
+          .map((key) => parsePercent(next[key]))
+          .filter((num) => num !== null)
+
+        if (values.length === 2 && values[0] + values[1] > 100 + PERCENT_TOLERANCE) {
+          setFormError(`${triplet.label}: selected values cannot exceed 100%.`)
+        }
+      }
+
+      return next
+    })
   }
 
   const handleStageChange = async (e) => {
@@ -334,6 +458,11 @@ export default function ClusterDetail() {
       setFormError(PRUNING_FUTURE_DATE_ERROR)
       return
     }
+    const percentageError = getPercentageValidationError(form)
+    if (percentageError) {
+      setFormError(percentageError)
+      return
+    }
     setShowSaveConfirm(true)
   }
 
@@ -341,6 +470,11 @@ export default function ClusterDetail() {
     if (isSectionLocked) return
     if (form.lastPrunedDate && form.lastPrunedDate > todayDate) {
       setFormError(PRUNING_FUTURE_DATE_ERROR)
+      return
+    }
+    const percentageError = getPercentageValidationError(form)
+    if (percentageError) {
+      setFormError(percentageError)
       return
     }
     setSaving(true)
@@ -403,7 +537,11 @@ export default function ClusterDetail() {
           max={field.name === 'lastPrunedDate' ? todayDate : field.max}
           value={form[field.name] ?? ''}
           onChange={handleFieldChange}
-          disabled={field.name === 'numberOfPlants' || (isOverviewSection && AGRICLIMATIC_FIELD_NAMES.includes(field.name))}
+          disabled={
+            field.name === 'numberOfPlants' ||
+            (isFertilizeSection && field.name === 'soilPh') ||
+            (isOverviewSection && AGRICLIMATIC_FIELD_NAMES.includes(field.name))
+          }
           placeholder={field.label}
         />
       )}
@@ -439,7 +577,7 @@ export default function ClusterDetail() {
             <p className="cd-lock-note">
               {isHarvestLocked
                 ? 'Harvest inputs are available only when the cluster stage is Ready to Harvest.'
-                : 'Pruning inputs are not available while the cluster stage is Seed / Sapling.'}
+                : 'Pruning inputs are not available while the cluster stage is Sapling.'}
             </p>
             <p className="cd-lock-note-sub">
               {isHarvestLocked

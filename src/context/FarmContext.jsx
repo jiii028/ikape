@@ -563,10 +563,10 @@ function mapStageDataFromDb(row) {
     numberOfPlants: row.number_of_plants ?? '',
     // Variety is stored in clusters.variety and merged in mapClusterFromDb.
     variety: '',
-    fertilizerFrequency: row.fertilizer_frequency || '',
-    fertilizerType: row.fertilizer_type || '',
-    pesticideType: row.pesticide_type || '',
-    pesticideFrequency: row.pesticide_frequency || '',
+    fertilizerFrequency: fromFrequencyEnum(row.fertilizer_frequency),
+    fertilizerType: fromTypeEnum(row.fertilizer_type),
+    pesticideType: fromTypeEnum(row.pesticide_type),
+    pesticideFrequency: fromFrequencyEnum(row.pesticide_frequency),
     monthlyTemperature: row.avg_temp_c ?? row.monthly_temperature ?? '',
     rainfall: row.avg_rainfall_mm ?? row.rainfall ?? '',
     humidity: row.avg_humidity_pct ?? row.humidity ?? '',
@@ -576,6 +576,7 @@ function mapStageDataFromDb(row) {
     lastPrunedDate: row.last_pruned_date || '',
     shadeTrees: shadeTreeValue,
     estimatedFloweringDate: row.estimated_flowering_date || '',
+    actualFloweringDate: row.actual_flowering_date || '',
     harvestDate: row.actual_harvest_date || row.harvest_date || '',
     predictedYield: row.predicted_yield ?? '',
     harvestSeason: row.season || row.harvest_season || '',
@@ -611,16 +612,17 @@ function mapStageDataToDb(sd = {}) {
 
   if (has('datePlanted')) mapped.date_planted = dt(sd.datePlanted)
   if (has('numberOfPlants')) mapped.number_of_plants = int(sd.numberOfPlants)
-  if (has('fertilizerType')) mapped.fertilizer_type = str(sd.fertilizerType)
-  if (has('fertilizerFrequency')) mapped.fertilizer_frequency = str(sd.fertilizerFrequency)
-  if (has('pesticideType')) mapped.pesticide_type = str(sd.pesticideType)
-  if (has('pesticideFrequency')) mapped.pesticide_frequency = str(sd.pesticideFrequency)
+  if (has('fertilizerType')) mapped.fertilizer_type = toTypeEnum(sd.fertilizerType)
+  if (has('fertilizerFrequency')) mapped.fertilizer_frequency = toFrequencyEnum(sd.fertilizerFrequency)
+  if (has('pesticideType')) mapped.pesticide_type = toTypeEnum(sd.pesticideType)
+  if (has('pesticideFrequency')) mapped.pesticide_frequency = toFrequencyEnum(sd.pesticideFrequency)
   if (has('lastPrunedDate')) mapped.last_pruned_date = dt(sd.lastPrunedDate)
   if (has('soilPh')) mapped.soil_ph = num(sd.soilPh)
   if (has('monthlyTemperature')) mapped.avg_temp_c = num(sd.monthlyTemperature)
   if (has('rainfall')) mapped.avg_rainfall_mm = num(sd.rainfall)
   if (has('humidity')) mapped.avg_humidity_pct = num(sd.humidity)
   if (has('estimatedFloweringDate')) mapped.estimated_flowering_date = dt(sd.estimatedFloweringDate)
+  if (has('actualFloweringDate')) mapped.actual_flowering_date = dt(sd.actualFloweringDate)
   if (has('estimatedHarvestDate')) mapped.estimated_harvest_date = dt(sd.estimatedHarvestDate)
   if (has('predictedYield')) mapped.predicted_yield = num(sd.predictedYield)
   if (has('preLastHarvestDate')) mapped.pre_last_harvest_date = dt(sd.preLastHarvestDate)
@@ -656,6 +658,60 @@ function normalizeShadeTreeBoolean(value) {
   if (normalized === 'yes' || normalized === 'true') return true
   if (normalized === 'no' || normalized === 'false') return false
   return null
+}
+
+function toFrequencyEnum(value) {
+  if (value === '' || value === null || value === undefined) return null
+
+  const normalized = String(value).trim().toLowerCase()
+  if (normalized.startsWith('often')) return 'often'
+  if (normalized.startsWith('sometimes')) return 'sometimes'
+  if (normalized.startsWith('rarely')) return 'rarely'
+  if (normalized.startsWith('never')) return 'never'
+
+  // Unknown values are dropped instead of causing enum write failures.
+  return null
+}
+
+function fromFrequencyEnum(value) {
+  if (value === '' || value === null || value === undefined) return ''
+
+  const normalized = String(value).trim().toLowerCase()
+  if (normalized === 'often') return 'Often'
+  if (normalized === 'sometimes') return 'Sometimes'
+  if (normalized === 'rarely') return 'Rarely'
+  if (normalized === 'never') return 'Never'
+
+  return String(value)
+}
+
+function toTypeEnum(value) {
+  if (value === '' || value === null || value === undefined) return null
+
+  const normalized = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-')
+
+  if (normalized === 'organic') return 'organic'
+  if (normalized === 'non-organic') return 'non-organic'
+
+  // Unknown values are dropped instead of causing enum write failures.
+  return null
+}
+
+function fromTypeEnum(value) {
+  if (value === '' || value === null || value === undefined) return ''
+
+  const normalized = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-')
+
+  if (normalized === 'organic') return 'Organic'
+  if (normalized === 'non-organic') return 'Non-Organic'
+
+  return String(value)
 }
 
 function mapHarvestRecordFromStageData(sd = {}) {

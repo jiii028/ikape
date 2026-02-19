@@ -19,9 +19,9 @@ import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
 import './FarmDetail.css'
 
 const STAGE_CONFIG = {
-  'seed-sapling': { label: 'Seed/Sapling', icon: Sprout, color: '#86efac', bg: '#f0fdf4' },
+  'seed-sapling': { label: 'Sapling', icon: Sprout, color: '#86efac', bg: '#f0fdf4' },
   'tree': { label: 'Tree', icon: TreePine, color: '#34d399', bg: '#ecfdf5' },
-  'flowering': { label: 'Flowering/Fruit-bearing', icon: Flower2, color: '#fbbf24', bg: '#fffbeb' },
+  'flowering': { label: 'Flowering', icon: Flower2, color: '#fbbf24', bg: '#fffbeb' },
   'ready-to-harvest': { label: 'Ready to Harvest', icon: Coffee, color: '#f87171', bg: '#fef2f2' },
 }
 
