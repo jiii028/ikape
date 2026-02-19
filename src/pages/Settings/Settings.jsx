@@ -1,10 +1,13 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { User, Mail, Phone, MapPin, Save, LogOut } from 'lucide-react';
+import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog';
 import './Settings.css';
 
 export default function Settings() {
   const { user, logout, updateProfile } = useAuth();
+  const navigate = useNavigate();
   const [form, setForm] = useState({
     firstName: user?.firstName || '',
     lastName: user?.lastName || '',
@@ -14,6 +17,7 @@ export default function Settings() {
     province: user?.province || '',
   });
   const [saved, setSaved] = useState(false);
+  const [logoutConfirm, setLogoutConfirm] = useState(false);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -27,6 +31,11 @@ export default function Settings() {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
   };
 
   return (
@@ -129,11 +138,22 @@ export default function Settings() {
           <h2>Account</h2>
           <p className="settings-desc">Manage your account settings and session.</p>
 
-          <button className="btn-logout" onClick={logout}>
+          <button className="btn-logout" onClick={() => setLogoutConfirm(true)}>
             <LogOut size={16} /> Sign Out
           </button>
         </div>
       </div>
+      
+      <ConfirmDialog
+        isOpen={logoutConfirm}
+        onClose={() => setLogoutConfirm(false)}
+        onConfirm={handleLogout}
+        title="Confirm Logout"
+        message="Are you sure you want to log out? You will need to log in again to access your account."
+        confirmText="Log Out"
+        cancelText="Cancel"
+        variant="warning"
+      />
     </div>
   );
 }

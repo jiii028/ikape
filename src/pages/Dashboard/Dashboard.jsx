@@ -15,6 +15,7 @@ import {
   CalendarDays,
 } from 'lucide-react'
 import ClusterFormModal from '../../components/ClusterFormModal/ClusterFormModal'
+import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
 import './Dashboard.css'
 
 const STAGE_CONFIG = {
@@ -28,6 +29,7 @@ export default function Dashboard() {
   const { clusters, deleteCluster } = useFarm()
   const navigate = useNavigate()
   const [showClusterForm, setShowClusterForm] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, clusterId: null, clusterName: '' })
 
   const totalTrees = clusters.reduce((sum, c) => sum + (parseInt(c.plantCount) || 0), 0)
   const harvestReady = clusters.filter((c) => c.plantStage === 'ready-to-harvest').length
@@ -132,9 +134,11 @@ export default function Dashboard() {
                       title="Delete"
                       onClick={(e) => {
                         e.stopPropagation()
-                        if (window.confirm('Delete this cluster?')) {
-                          deleteCluster(cluster.id)
-                        }
+                        setDeleteConfirm({ 
+                          isOpen: true, 
+                          clusterId: cluster.id, 
+                          clusterName: cluster.clusterName 
+                        })
                       }}
                     >
                       <Trash2 size={14} />
@@ -203,7 +207,18 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-
+  
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm({ isOpen: false, clusterId: null, clusterName: '' })}
+        onConfirm={() => deleteCluster(deleteConfirm.clusterId)}
+        title="Delete Cluster"
+        message={`Are you sure you want to delete "${deleteConfirm.clusterName}"? This action cannot be undone and all associated data will be permanently removed.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+      />
+    
       {showClusterForm && <ClusterFormModal onClose={() => setShowClusterForm(false)} />}
     </div>
   )

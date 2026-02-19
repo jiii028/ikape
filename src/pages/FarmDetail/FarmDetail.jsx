@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import ClusterFormModal from '../../components/ClusterFormModal/ClusterFormModal'
 import ClusterDetailModal from '../../components/ClusterDetailModal/ClusterDetailModal'
+import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
 import './FarmDetail.css'
 
 const STAGE_CONFIG = {
@@ -31,6 +32,7 @@ export default function FarmDetail() {
   const farm = getFarm(farmId)
   const [showClusterForm, setShowClusterForm] = useState(false)
   const [selectedCluster, setSelectedCluster] = useState(null)
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, clusterId: null, clusterName: '' })
   const formatEstimatedDate = (date) =>
     date ? new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not set'
 
@@ -100,9 +102,11 @@ export default function FarmDetail() {
                         title="Delete"
                         onClick={(e) => {
                           e.stopPropagation()
-                          if (window.confirm('Delete this cluster?')) {
-                            deleteCluster(farmId, cluster.id)
-                          }
+                          setDeleteConfirm({ 
+                            isOpen: true, 
+                            clusterId: cluster.id, 
+                            clusterName: cluster.clusterName 
+                          })
                         }}
                       >
                         <Trash2 size={14} />
@@ -153,6 +157,17 @@ export default function FarmDetail() {
           onClose={() => setSelectedCluster(null)}
         />
       )}
+      
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm({ isOpen: false, clusterId: null, clusterName: '' })}
+        onConfirm={() => deleteCluster(deleteConfirm.clusterId)}
+        title="Delete Cluster"
+        message={`Are you sure you want to delete "${deleteConfirm.clusterName}"? This action cannot be undone and all associated data will be permanently removed.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+      />
     </div>
   )
 }

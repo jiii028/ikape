@@ -1,4 +1,5 @@
 import { Outlet, NavLink, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard,
@@ -15,6 +16,7 @@ import {
   FlaskConical,
   ShieldAlert,
 } from 'lucide-react'
+import ConfirmDialog from '../components/ConfirmDialog/ConfirmDialog'
 import './DashboardLayout.css'
 
 export default function DashboardLayout() {
@@ -23,6 +25,7 @@ export default function DashboardLayout() {
   const location = useLocation()
   const { clusterId } = useParams()
   const isClusterRoute = location.pathname.startsWith('/clusters/')
+  const [logoutConfirm, setLogoutConfirm] = useState(false)
 
   const handleLogout = async () => {
     await logout()
@@ -78,7 +81,7 @@ export default function DashboardLayout() {
         </nav>
 
         <div className="sidebar-footer">
-          <button className="logout-btn" onClick={handleLogout}>
+          <button className="logout-btn" onClick={() => setLogoutConfirm(true)}>
             <LogOut size={20} />
             <span>Log Out</span>
           </button>
@@ -115,6 +118,17 @@ export default function DashboardLayout() {
           <Outlet />
         </div>
       </main>
+      
+      <ConfirmDialog
+        isOpen={logoutConfirm}
+        onClose={() => setLogoutConfirm(false)}
+        onConfirm={handleLogout}
+        title="Confirm Logout"
+        message="Are you sure you want to log out? You will need to log in again to access your account."
+        confirmText="Log Out"
+        cancelText="Cancel"
+        variant="warning"
+      />
     </div>
   )
 }

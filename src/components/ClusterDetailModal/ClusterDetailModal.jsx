@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useFarm } from '../../context/FarmContext'
 import { X, Save } from 'lucide-react'
+import ConfirmDialog from '../ConfirmDialog/ConfirmDialog'
 import '../FarmFormModal/FarmFormModal.css'
 
 const STAGE_FIELDS = {
@@ -101,6 +102,20 @@ export default function ClusterDetailModal({ cluster, onClose }) {
     })
     return initial
   })
+  const [initialForm, setInitialForm] = useState(() => {
+    const initial = {}
+    fields.forEach((f) => {
+      initial[f.name] = cluster.stageData?.[f.name] || ''
+    })
+    return initial
+  })
+  const [isDirty, setIsDirty] = useState(false)
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
+
+  useEffect(() => {
+    const hasChanges = JSON.stringify(form) !== JSON.stringify(initialForm)
+    setIsDirty(hasChanges)
+  }, [form, initialForm])
 
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
@@ -110,6 +125,14 @@ export default function ClusterDetailModal({ cluster, onClose }) {
     e.preventDefault()
     await updateCluster(cluster.id, { stageData: form })
     onClose()
+  }
+
+  const handleClose = () => {
+    if (isDirty) {
+      setShowDiscardConfirm(true)
+    } else {
+      onClose()
+    }
   }
 
   // Group fields into sections for ready-to-harvest
@@ -142,11 +165,11 @@ export default function ClusterDetailModal({ cluster, onClose }) {
   )
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={handleClose}>
       <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{cluster.clusterName} — Data Entry</h3>
-          <button className="modal-close" onClick={onClose}>
+          <button className="modal-close" onClick={handleClose}>
             <X size={20} />
           </button>
         </div>
@@ -175,13 +198,24 @@ export default function ClusterDetailModal({ cluster, onClose }) {
           )}
 
           <div className="modal-actions">
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={handleClose}>Cancel</button>
             <button type="submit" className="btn-primary">
               <Save size={16} /> Save Data
             </button>
           </div>
         </form>
       </div>
+
+      <ConfirmDialog
+        isOpen={showDiscardConfirm}
+        onClose={() => setShowDiscardConfirm(false)}
+        onConfirm={onClose}
+        title="Discard Changes?"
+        message="You have unsaved changes. Are you sure you want to close this form? All changes will be lost."
+        confirmText="Discard"
+        cancelText="Keep Editing"
+        variant="warning"
+      />
     </div>
   )
 }
