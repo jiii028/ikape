@@ -173,7 +173,12 @@ export default function ClusterDetailModal({ cluster, onClose }) {
       setFormError(PRUNING_FUTURE_DATE_ERROR)
       return
     }
-    await updateCluster(cluster.id, { stageData: form })
+    const result = await updateCluster(cluster.id, { stageData: form })
+    if (!result?.success) {
+      setShowSaveConfirm(false)
+      setFormError(result?.error || 'Unable to save cluster data.')
+      return
+    }
     onClose()
   }
 

@@ -67,6 +67,14 @@ export default function Prediction() {
                 stageData: Array.isArray(c.cluster_stage_data) ? c.cluster_stage_data[0] : c.cluster_stage_data,
             }))
             const harvests = harvestsRes.data || []
+            const clusterActualYieldMap = new Map()
+
+            harvests.forEach((record) => {
+                const clusterId = record.cluster_id
+                if (!clusterId) return
+                const nextTotal = (clusterActualYieldMap.get(clusterId) || 0) + parseFloat(record.yield_kg || 0)
+                clusterActualYieldMap.set(clusterId, nextTotal)
+            })
 
             // --- Overall aggregated data ---
             // Group yields by season from harvest_records
@@ -80,11 +88,12 @@ export default function Prediction() {
             // Add predicted yields from cluster_stage_data
             clusters.forEach((c) => {
                 const sd = c.stageData
-                if (sd?.harvest_season) {
-                    if (!seasonMap[sd.harvest_season]) {
-                        seasonMap[sd.harvest_season] = { season: sd.harvest_season, actual: 0, predicted: 0 }
+                const season = sd?.season || sd?.harvest_season
+                if (season) {
+                    if (!seasonMap[season]) {
+                        seasonMap[season] = { season, actual: 0, predicted: 0 }
                     }
-                    seasonMap[sd.harvest_season].predicted += parseFloat(sd.predicted_yield || 0)
+                    seasonMap[season].predicted += parseFloat(sd.predicted_yield || 0)
                 }
             })
 
@@ -125,8 +134,8 @@ export default function Prediction() {
 
                 const sd = c.stageData
                 const predicted = parseFloat(sd?.predicted_yield || 0)
-                const actual = parseFloat(sd?.current_yield || 0)
-                const previous = parseFloat(sd?.previous_yield || 0)
+                const actual = clusterActualYieldMap.get(c.id) || parseFloat(sd?.current_yield || 0)
+                const previous = parseFloat((sd?.pre_yield_kg ?? sd?.previous_yield) || 0)
 
                 farmMap[farmId].clusters.push({
                     name: c.cluster_name,

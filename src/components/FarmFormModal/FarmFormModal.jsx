@@ -18,6 +18,7 @@ export default function FarmFormModal({ onClose, editData }) {
   const [isDirty, setIsDirty] = useState(false)
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
+  const [formError, setFormError] = useState('')
 
   useEffect(() => {
     const initialData = editData || { farmName: '', farmArea: '', elevation: '', plantVariety: '', overallTreeCount: '' }
@@ -28,17 +29,26 @@ export default function FarmFormModal({ onClose, editData }) {
   }, [form, editData])
 
   const handleChange = (e) => {
+    if (formError) setFormError('')
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.farmName || !form.farmArea) return
+    if (!form.farmName || !form.farmArea) {
+      setFormError('Farm Name and Farm Area are required.')
+      return
+    }
     setShowSaveConfirm(true)
   }
 
   const doSave = async () => {
-    await setFarmInfo(form)
+    const result = await setFarmInfo(form)
+    if (!result?.success) {
+      setShowSaveConfirm(false)
+      setFormError(result?.error || 'Unable to save farm details.')
+      return
+    }
     onClose()
   }
 
@@ -61,6 +71,8 @@ export default function FarmFormModal({ onClose, editData }) {
         </div>
 
         <form onSubmit={handleSubmit} className="modal-form">
+          {formError && <div className="modal-form-error">{formError}</div>}
+
           <div className="form-group">
             <label>Farm Name *</label>
             <input

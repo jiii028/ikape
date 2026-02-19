@@ -233,14 +233,20 @@ export default function ClusterDetail() {
 
     if (!hasAgriclimaticMismatch) return
 
-    updateCluster(cluster.id, {
-      stageData: {
-        monthlyTemperature: agriclimaticData.monthlyTemperature,
-        rainfall: agriclimaticData.rainfall,
-        humidity: agriclimaticData.humidity,
-        soilPh: agriclimaticData.soilPh,
-      },
-    })
+    ;(async () => {
+      const result = await updateCluster(cluster.id, {
+        stageData: {
+          monthlyTemperature: agriclimaticData.monthlyTemperature,
+          rainfall: agriclimaticData.rainfall,
+          humidity: agriclimaticData.humidity,
+          soilPh: agriclimaticData.soilPh,
+        },
+      })
+
+      if (!result?.success) {
+        console.error('Failed to sync agriclimatic data into cluster stage data:', result?.error)
+      }
+    })()
   }, [agriclimaticData, cluster?.id, cluster?.stageData, isOverviewSection, updateCluster])
 
   const sectionFormSnapshot = useMemo(() => {
@@ -315,7 +321,10 @@ export default function ClusterDetail() {
       }
     }
 
-    await updateCluster(cluster.id, updates)
+    const result = await updateCluster(cluster.id, updates)
+    if (!result?.success) {
+      setFormError(result?.error || 'Unable to update plant stage.')
+    }
   }
 
   const handleSave = (e) => {
@@ -337,12 +346,16 @@ export default function ClusterDetail() {
     setSaving(true)
     try {
       const { numberOfPlants, ...stageDataPayload } = form
-      await updateCluster(cluster.id, {
+      const result = await updateCluster(cluster.id, {
         stageData: {
           ...(cluster.stageData || {}),
           ...stageDataPayload,
         },
       })
+      if (!result?.success) {
+        setFormError(result?.error || 'Unable to save cluster details.')
+        return
+      }
       setShowSaveConfirm(false)
       setIsDirty(false)
     } finally {
@@ -405,7 +418,7 @@ export default function ClusterDetail() {
         </button>
         <div className="cd-title">
           <h1>{cluster.clusterName}</h1>
-          <p>Area: {cluster.areaSize} ha | Plants: {cluster.plantCount}</p>
+          <p>Area: {cluster.areaSize} sqm | Plants: {cluster.plantCount}</p>
         </div>
         <div className="cd-stage">
           <label>Plant Stage</label>

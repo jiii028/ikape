@@ -54,10 +54,12 @@ export default function ClusterFormModal({ onClose, editData }) {
     const projectedArea = usedArea + inputArea
     const projectedPlantCount = usedPlantCount + inputPlantCount
 
-    const maxFarmArea = parseFloat(farm?.farm_area)
-    if (Number.isFinite(maxFarmArea) && maxFarmArea > 0 && projectedArea > maxFarmArea) {
-      const remainingArea = Math.max(maxFarmArea - usedArea, 0)
-      return `Area size exceeds your registered farm area. Remaining allocatable area: ${remainingArea.toFixed(2)}.`
+    // Farm area is stored in hectares while cluster input is in square meters.
+    const maxFarmAreaHa = parseFloat(farm?.farm_area)
+    const maxFarmAreaSqm = Number.isFinite(maxFarmAreaHa) && maxFarmAreaHa > 0 ? maxFarmAreaHa * 10000 : null
+    if (Number.isFinite(maxFarmAreaSqm) && projectedArea > maxFarmAreaSqm) {
+      const remainingAreaSqm = Math.max(maxFarmAreaSqm - usedArea, 0)
+      return `Area size exceeds your registered farm area. Remaining allocatable area: ${remainingAreaSqm.toFixed(2)} sqm.`
     }
 
     const maxTreeCount = parseInt(farm?.overall_tree_count, 10)
@@ -87,9 +89,19 @@ export default function ClusterFormModal({ onClose, editData }) {
     }
 
     if (editData) {
-      await updateCluster(editData.id, form)
+      const result = await updateCluster(editData.id, form)
+      if (!result?.success) {
+        setShowSaveConfirm(false)
+        setFormError(result?.error || 'Unable to update cluster.')
+        return
+      }
     } else {
-      await addCluster(form)
+      const result = await addCluster(form)
+      if (!result?.success) {
+        setShowSaveConfirm(false)
+        setFormError(result?.error || 'Unable to add cluster.')
+        return
+      }
     }
     onClose()
   }

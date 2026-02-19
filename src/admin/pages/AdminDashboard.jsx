@@ -156,6 +156,14 @@ export default function AdminDashboard() {
                 stageData: Array.isArray(c.cluster_stage_data) ? c.cluster_stage_data[0] : c.cluster_stage_data,
             }))
             const harvests = harvestsRes.data || []
+            const clusterActualYieldMap = new Map()
+
+            harvests.forEach((record) => {
+                const clusterId = record.cluster_id
+                if (!clusterId) return
+                const nextTotal = (clusterActualYieldMap.get(clusterId) || 0) + parseFloat(record.yield_kg || 0)
+                clusterActualYieldMap.set(clusterId, nextTotal)
+            })
 
             // Compute stats
             const totalFarmers = users.length
@@ -172,12 +180,15 @@ export default function AdminDashboard() {
                 const sd = c.stageData
                 if (sd) {
                     predictedYield += parseFloat(sd.predicted_yield || 0)
-                    actualYield += parseFloat(sd.current_yield || 0)
-                    previousYield += parseFloat(sd.previous_yield || 0)
-                    gradeFine += parseFloat(sd.grade_fine || 0)
-                    gradePremium += parseFloat(sd.grade_premium || 0)
-                    gradeCommercial += parseFloat(sd.grade_commercial || 0)
+                    actualYield += clusterActualYieldMap.get(c.id) || parseFloat(sd.current_yield || 0)
+                    previousYield += parseFloat((sd.pre_yield_kg ?? sd.previous_yield) || 0)
                 }
+            })
+
+            harvests.forEach((record) => {
+                gradeFine += parseFloat(record.grade_fine || 0)
+                gradePremium += parseFloat(record.grade_premium || 0)
+                gradeCommercial += parseFloat(record.grade_commercial || 0)
             })
 
             const nextStats = {
@@ -227,8 +238,8 @@ export default function AdminDashboard() {
                 const sd = c.stageData
                 if (!sd) return null
                 const predicted = parseFloat(sd.predicted_yield || 0)
-                const actual = parseFloat(sd.current_yield || 0)
-                const prev = parseFloat(sd.previous_yield || 0)
+                const actual = clusterActualYieldMap.get(c.id) || parseFloat(sd.current_yield || 0)
+                const prev = parseFloat((sd.pre_yield_kg ?? sd.previous_yield) || 0)
                 const decline = prev > 0 ? (((prev - actual) / prev) * 100).toFixed(1) : 0
                 let risk = 'Low'
                 let priority = 1
