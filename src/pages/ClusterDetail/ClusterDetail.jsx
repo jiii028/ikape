@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Save } from 'lucide-react'
+import { ArrowLeft, Save, ChevronDown } from 'lucide-react'
 import { useFarm } from '../../context/FarmContext'
 import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
 import './ClusterDetail.css'
@@ -87,6 +87,39 @@ const SECTION_TITLES = {
   pesticide: 'Pesticide',
 }
 
+const HARVEST_FIELD_GROUPS = [
+  {
+    id: 'timing',
+    title: 'Timing and Season',
+    subtitle: 'Track key dates and harvest cycle information.',
+    fieldNames: ['lastHarvestedDate', 'harvestDate', 'estimatedHarvestDate', 'harvestSeason'],
+  },
+  {
+    id: 'yield',
+    title: 'Yield Overview',
+    subtitle: 'Capture previous, predicted, and actual production.',
+    fieldNames: ['previousYield', 'predictedYield', 'currentYield'],
+  },
+  {
+    id: 'grade',
+    title: 'Grade Breakdown',
+    subtitle: 'Record quality percentage by grade class.',
+    fieldNames: ['gradeFine', 'gradePremium', 'gradeCommercial'],
+  },
+  {
+    id: 'pre',
+    title: 'Pre-Harvest Metrics',
+    subtitle: 'Baseline production and grade output before harvest.',
+    fieldNames: ['preLastHarvestDate', 'preTotalTrees', 'preYieldKg', 'preGradeFine', 'preGradePremium', 'preGradeCommercial'],
+  },
+  {
+    id: 'post',
+    title: 'Post-Harvest Quality',
+    subtitle: 'Capture current output and bean quality checks.',
+    fieldNames: ['postCurrentYield', 'postGradeFine', 'postGradePremium', 'postGradeCommercial', 'defectCount', 'beanMoisture', 'beanScreenSize'],
+  },
+]
+
 function formatDateLocal(date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -100,25 +133,71 @@ export default function ClusterDetail() {
   const { getCluster, updateCluster } = useFarm()
   const cluster = getCluster(clusterId)
   const [form, setForm] = useState({})
+  const [isDirty, setIsDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
+  const [expandedHarvestGroups, setExpandedHarvestGroups] = useState({
+    timing: true,
+    yield: true,
+    grade: false,
+    pre: false,
+    post: false,
+  })
   const isHarvestSection = section === 'harvest'
   const isReadyToHarvest = cluster?.plantStage === 'ready-to-harvest'
   const isHarvestLocked = isHarvestSection && !isReadyToHarvest
 
   const fields = useMemo(() => SECTION_FIELDS[section] || [], [section])
+  const harvestFieldsByName = useMemo(
+    () => Object.fromEntries(SECTION_FIELDS.harvest.map((field) => [field.name, field])),
+    []
+  )
+  const harvestGroups = useMemo(
+    () =>
+      HARVEST_FIELD_GROUPS.map((group) => ({
+        ...group,
+        fields: group.fieldNames.map((name) => harvestFieldsByName[name]).filter(Boolean),
+      })),
+    [harvestFieldsByName]
+  )
+  const harvestProgress = useMemo(() => {
+    const total = SECTION_FIELDS.harvest.length
+    const completed = SECTION_FIELDS.harvest.filter((field) => {
+      const value = form[field.name]
+      return value !== '' && value !== null && value !== undefined
+    }).length
+    return {
+      total,
+      completed,
+      percent: total > 0 ? Math.round((completed / total) * 100) : 0,
+    }
+  }, [form])
+
+  const sectionFormSnapshot = useMemo(() => {
+    const nextForm = {}
+    fields.forEach((field) => {
+      if (field.name === 'numberOfPlants') {
+        nextForm[field.name] = cluster?.plantCount ?? ''
+        return
+      }
+      nextForm[field.name] = cluster?.stageData?.[field.name] ?? ''
+    })
+    return nextForm
+  }, [cluster?.plantCount, cluster?.stageData, fields])
 
   useEffect(() => {
     if (!SECTION_FIELDS[section]) {
       navigate(`/clusters/${clusterId}/overview`, { replace: true })
       return
     }
-    const nextForm = {}
-    fields.forEach((field) => {
-      nextForm[field.name] = cluster?.stageData?.[field.name] ?? ''
-    })
-    setForm(nextForm)
-  }, [cluster, clusterId, fields, navigate, section])
+    setIsDirty(false)
+  }, [clusterId, navigate, section])
+
+  useEffect(() => {
+    if (!isDirty) {
+      setForm(sectionFormSnapshot)
+    }
+  }, [isDirty, sectionFormSnapshot])
 
   if (!cluster) {
     return (
@@ -134,6 +213,7 @@ export default function ClusterDetail() {
   }
 
   const handleFieldChange = (e) => {
+    setIsDirty(true)
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
@@ -156,19 +236,72 @@ export default function ClusterDetail() {
 
   const handleSave = (e) => {
     e.preventDefault()
+    if (isHarvestLocked) return
     setShowSaveConfirm(true)
   }
 
   const doSave = async () => {
+    if (isHarvestLocked) return
     setSaving(true)
-    await updateCluster(cluster.id, {
-      stageData: {
-        ...(cluster.stageData || {}),
-        ...form,
-      },
-    })
-    setSaving(false)
+    try {
+      const { numberOfPlants, ...stageDataPayload } = form
+      await updateCluster(cluster.id, {
+        stageData: {
+          ...(cluster.stageData || {}),
+          ...stageDataPayload,
+        },
+      })
+      setShowSaveConfirm(false)
+      setIsDirty(false)
+    } finally {
+      setSaving(false)
+    }
   }
+
+  const renderField = (field) => (
+    <div className="form-group" key={field.name}>
+      <label>{field.label}</label>
+      {field.type === 'select' ? (
+        <select
+          name={field.name}
+          value={form[field.name] ?? ''}
+          onChange={handleFieldChange}
+        >
+          <option value="">Select...</option>
+          {field.options.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      ) : field.type === 'select-labeled' ? (
+        <select
+          name={field.name}
+          value={form[field.name] ?? ''}
+          onChange={handleFieldChange}
+        >
+          <option value="">Select...</option>
+          {field.options.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          name={field.name}
+          type={field.type}
+          step={field.step}
+          min={field.min}
+          max={field.max}
+          value={form[field.name] ?? ''}
+          onChange={handleFieldChange}
+          disabled={field.name === 'numberOfPlants'}
+          placeholder={field.label}
+        />
+      )}
+    </div>
+  )
 
   return (
     <div className="cluster-detail-page">
@@ -195,65 +328,116 @@ export default function ClusterDetail() {
       <div className="cd-card">
         <h2>{SECTION_TITLES[section]}</h2>
         {isHarvestLocked && (
-          <p className="cd-lock-note">
-            Harvest form is disabled. Change cluster stage to Ready to Harvest to enable input.
-          </p>
+          <div className="cd-lock-panel">
+            <p className="cd-lock-note">
+              Harvest inputs are available only when the cluster stage is Ready to Harvest.
+            </p>
+            <p className="cd-lock-note-sub">
+              Use the Plant Stage selector above to change this cluster to Ready to Harvest.
+            </p>
+          </div>
         )}
-        <form className="cd-form" onSubmit={handleSave}>
-          <div className="cd-form-grid">
-            {fields.map((field) => (
-              <div className="form-group" key={field.name}>
-                <label>{field.label}</label>
-                {field.type === 'select' ? (
-                  <select
-                    name={field.name}
-                    value={form[field.name] ?? ''}
-                    onChange={handleFieldChange}
-                    disabled={isHarvestLocked}
-                  >
-                    <option value="">Select...</option>
-                    {field.options.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                ) : field.type === 'select-labeled' ? (
-                  <select
-                    name={field.name}
-                    value={form[field.name] ?? ''}
-                    onChange={handleFieldChange}
-                    disabled={isHarvestLocked}
-                  >
-                    <option value="">Select...</option>
-                    {field.options.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    name={field.name}
-                    type={field.type}
-                    step={field.step}
-                    min={field.min}
-                    max={field.max}
-                    value={form[field.name] ?? ''}
-                    onChange={handleFieldChange}
-                    placeholder={field.label}
-                    disabled={isHarvestLocked}
-                  />
-                )}
+        {!isHarvestLocked && (
+          <form className="cd-form" onSubmit={handleSave}>
+            {isHarvestSection ? (
+              <>
+                <div className="harvest-form-toolbar">
+                  <div className="harvest-progress-pill">
+                    <span className="harvest-progress-label">Form Progress</span>
+                    <span className="harvest-progress-value">
+                      {harvestProgress.completed}/{harvestProgress.total} ({harvestProgress.percent}%)
+                    </span>
+                  </div>
+                  <div className="harvest-toolbar-actions">
+                    <button
+                      type="button"
+                      className="harvest-toolbar-btn"
+                      onClick={() =>
+                        setExpandedHarvestGroups({
+                          timing: true,
+                          yield: true,
+                          grade: true,
+                          pre: true,
+                          post: true,
+                        })
+                      }
+                    >
+                      Expand All
+                    </button>
+                    <button
+                      type="button"
+                      className="harvest-toolbar-btn"
+                      onClick={() =>
+                        setExpandedHarvestGroups({
+                          timing: true,
+                          yield: false,
+                          grade: false,
+                          pre: false,
+                          post: false,
+                        })
+                      }
+                    >
+                      Focus Essentials
+                    </button>
+                  </div>
+                </div>
+
+                <div className="harvest-groups">
+                  {harvestGroups.map((group) => {
+                    const completedInGroup = group.fields.filter((field) => {
+                      const value = form[field.name]
+                      return value !== '' && value !== null && value !== undefined
+                    }).length
+                    const isOpen = expandedHarvestGroups[group.id]
+
+                    return (
+                      <div key={group.id} className={`harvest-group ${isOpen ? 'harvest-group--open' : ''}`}>
+                        <button
+                          type="button"
+                          className="harvest-group-header"
+                          onClick={() =>
+                            setExpandedHarvestGroups((prev) => ({
+                              ...prev,
+                              [group.id]: !prev[group.id],
+                            }))
+                          }
+                        >
+                          <div className="harvest-group-title-wrap">
+                            <h3>{group.title}</h3>
+                            <p>{group.subtitle}</p>
+                          </div>
+                          <div className="harvest-group-meta">
+                            <span className="harvest-group-count">
+                              {completedInGroup}/{group.fields.length}
+                            </span>
+                            <ChevronDown
+                              size={16}
+                              className={`harvest-group-chevron ${isOpen ? 'harvest-group-chevron--open' : ''}`}
+                            />
+                          </div>
+                        </button>
+                        {isOpen && (
+                          <div className="cd-form-grid cd-form-grid--harvest">
+                            {group.fields.map(renderField)}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="cd-form-grid">
+                {fields.map(renderField)}
               </div>
-            ))}
-          </div>
-          <div className="cd-actions">
-            <button type="submit" className="cd-save-btn" disabled={saving || isHarvestLocked}>
-              <Save size={16} /> {saving ? 'Saving...' : 'Save Changes'}
-            </button>
-          </div>
-        </form>
+            )}
+            <div className="cd-actions">
+              <button type="submit" className="cd-save-btn" disabled={saving}>
+                <Save size={16} /> {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       <ConfirmDialog

@@ -2,11 +2,15 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { testDatabaseConnection } from '../lib/testDatabase'
+import { Search, CheckCircle, X } from 'lucide-react'
 
 export default function SessionDebug() {
   const [sessionInfo, setSessionInfo] = useState(null)
   const [storageInfo, setStorageInfo] = useState([])
   const { user, authUser, loading } = useAuth()
+  const statusIcon = (ok) => (
+    ok ? <CheckCircle size={12} style={{ color: '#16a34a', verticalAlign: 'text-bottom' }} /> : <X size={12} style={{ color: '#dc2626', verticalAlign: 'text-bottom' }} />
+  )
 
   useEffect(() => {
     const checkSession = async () => {
@@ -64,20 +68,23 @@ export default function SessionDebug() {
       maxHeight: '80vh',
       overflow: 'auto'
     }}>
-      <h3 style={{ margin: '0 0 10px 0', fontSize: 14 }}>🔍 Session Debug</h3>
+      <h3 style={{ margin: '0 0 10px 0', fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Search size={14} />
+        Session Debug
+      </h3>
       
       <div style={{ marginBottom: 10 }}>
         <strong>Auth Context:</strong>
-        <div>Loading: {loading ? '✅' : '❌'}</div>
-        <div>User: {user ? `✅ ${user.email}` : '❌'}</div>
-        <div>Auth User: {authUser ? `✅ ${authUser.email}` : '❌'}</div>
+        <div>Loading: {statusIcon(loading)}</div>
+        <div>User: {statusIcon(Boolean(user))} {user ? user.email : ''}</div>
+        <div>Auth User: {statusIcon(Boolean(authUser))} {authUser ? authUser.email : ''}</div>
       </div>
 
       <div style={{ marginBottom: 10 }}>
         <strong>Supabase Session:</strong>
         {sessionInfo && (
           <>
-            <div>Has Session: {sessionInfo.hasSession ? '✅' : '❌'}</div>
+            <div>Has Session: {statusIcon(sessionInfo.hasSession)}</div>
             <div>User ID: {sessionInfo.userId || 'N/A'}</div>
             <div>Email: {sessionInfo.email || 'N/A'}</div>
             {sessionInfo.expiresAt && (
@@ -93,11 +100,13 @@ export default function SessionDebug() {
       <div>
         <strong>LocalStorage Keys:</strong>
         {storageInfo.length === 0 ? (
-          <div style={{ color: 'red' }}>❌ No auth keys found!</div>
+          <div style={{ color: 'red' }}>
+            {statusIcon(false)} No auth keys found!
+          </div>
         ) : (
           storageInfo.map(({ key, hasValue, length }) => (
             <div key={key}>
-              {hasValue ? '✅' : '❌'} {key} ({length} chars)
+              {statusIcon(hasValue)} {key} ({length} chars)
             </div>
           ))
         )}

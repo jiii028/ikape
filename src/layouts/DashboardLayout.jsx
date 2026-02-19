@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { useFarm } from '../context/FarmContext'
 import {
   LayoutDashboard,
   BarChart3,
@@ -12,24 +13,39 @@ import {
   Bell,
   User,
   ClipboardList,
+  Layers,
   Scissors,
   FlaskConical,
   ShieldAlert,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  X,
 } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog/ConfirmDialog'
 import './DashboardLayout.css'
 
 const SIDEBAR_PREF_KEY = 'ikape_farmer_sidebar_collapsed'
+const FARMER_MAIN_NAV_ITEMS = [
+  { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { path: '/harvest', icon: BarChart3, label: 'Harvest Records' },
+  { path: '/recommendations', icon: Lightbulb, label: 'Recommendations' },
+  { path: '/settings', icon: Settings, label: 'Settings' },
+]
 
 export default function DashboardLayout() {
   const { user, logout } = useAuth()
+  const { farm, clusters } = useFarm()
   const navigate = useNavigate()
   const location = useLocation()
   const { clusterId } = useParams()
   const isClusterRoute = location.pathname.startsWith('/clusters/')
+  const searchContainerRef = useRef(null)
+  const profileMenuRef = useRef(null)
   const [logoutConfirm, setLogoutConfirm] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_PREF_KEY) === 'true'
@@ -67,17 +83,32 @@ export default function DashboardLayout() {
     return () => window.removeEventListener('keydown', handleKeyToggle)
   }, [])
 
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      const clickedInsideSearch = searchContainerRef.current?.contains(event.target)
+      const clickedInsideProfile = profileMenuRef.current?.contains(event.target)
+
+      if (!clickedInsideSearch) {
+        setIsSearchOpen(false)
+      }
+
+      if (!clickedInsideProfile) {
+        setShowProfileMenu(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [])
+
+  useEffect(() => {
+    setShowProfileMenu(false)
+  }, [location.pathname])
+
   const handleLogout = async () => {
     await logout()
     navigate('/login', { replace: true })
   }
-
-  const appNavItems = [
-    { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { path: '/harvest', icon: BarChart3, label: 'Harvest Records' },
-    { path: '/recommendations', icon: Lightbulb, label: 'Recommendations' },
-    { path: '/settings', icon: Settings, label: 'Settings' },
-  ]
 
   const clusterNavItems = clusterId
     ? [
@@ -89,7 +120,75 @@ export default function DashboardLayout() {
       ]
     : []
 
-  const navItems = isClusterRoute ? clusterNavItems : appNavItems
+  const navItems = isClusterRoute ? clusterNavItems : FARMER_MAIN_NAV_ITEMS
+  const mobileNavItems = FARMER_MAIN_NAV_ITEMS
+  const normalizedSearch = searchQuery.trim().toLowerCase()
+
+  const searchResults = useMemo(() => {
+    if (!normalizedSearch) return []
+
+    const pageResults = FARMER_MAIN_NAV_ITEMS
+      .filter((item) => item.label.toLowerCase().includes(normalizedSearch))
+      .map((item) => ({
+        id: `page-${item.path}`,
+        type: 'page',
+        label: item.label,
+        detail: 'Navigate to page',
+        icon: item.icon,
+        path: item.path,
+      }))
+
+    const clusterResults = clusters
+      .filter((cluster) => {
+        const stage = cluster.plantStage || ''
+        return (
+          (cluster.clusterName || '').toLowerCase().includes(normalizedSearch) ||
+          stage.toLowerCase().includes(normalizedSearch)
+        )
+      })
+      .map((cluster) => ({
+        id: `cluster-${cluster.id}`,
+        type: 'cluster',
+        label: cluster.clusterName,
+        detail: `${cluster.plantStage || 'Unknown stage'} cluster`,
+        icon: Layers,
+        path: `/clusters/${cluster.id}/overview`,
+      }))
+
+    const farmResults =
+      farm?.farm_name && farm.farm_name.toLowerCase().includes(normalizedSearch)
+        ? [
+            {
+              id: `farm-${farm.id || 'current'}`,
+              type: 'farm',
+              label: farm.farm_name,
+              detail: 'Farm overview',
+              icon: LayoutDashboard,
+              path: '/dashboard',
+            },
+          ]
+        : []
+
+    return [...pageResults, ...farmResults, ...clusterResults].slice(0, 8)
+  }, [clusters, farm, normalizedSearch])
+
+  const handleSearchNavigate = (result) => {
+    setIsSearchOpen(false)
+    setSearchQuery('')
+    navigate(result.path)
+  }
+
+  const handleSearchKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      setIsSearchOpen(false)
+      return
+    }
+
+    if (event.key === 'Enter' && searchResults.length > 0) {
+      event.preventDefault()
+      handleSearchNavigate(searchResults[0])
+    }
+  }
 
   return (
     <div className="layout">
@@ -144,28 +243,98 @@ export default function DashboardLayout() {
 
       <main className={`main-content ${isSidebarCollapsed ? 'main-content--expanded' : ''}`}>
         <header className="topbar">
-          <div className="search-bar">
+          <div className="search-bar" ref={searchContainerRef}>
             <Search size={18} className="search-icon" />
-            <input type="text" placeholder="Search farm, cluster..." />
+            <input
+              type="text"
+              placeholder="Search pages and clusters..."
+              value={searchQuery}
+              onFocus={() => setIsSearchOpen(true)}
+              onChange={(event) => {
+                setSearchQuery(event.target.value)
+                setIsSearchOpen(true)
+              }}
+              onKeyDown={handleSearchKeyDown}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                className="search-clear-btn"
+                onClick={() => {
+                  setSearchQuery('')
+                  setIsSearchOpen(false)
+                }}
+                aria-label="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+            {isSearchOpen && (
+              <div className="search-results">
+                {searchResults.length === 0 ? (
+                  <div className="search-empty">No matches found</div>
+                ) : (
+                  searchResults.map((result) => (
+                    <button
+                      key={result.id}
+                      type="button"
+                      className="search-result-item"
+                      onClick={() => handleSearchNavigate(result)}
+                    >
+                      <result.icon size={16} />
+                      <div className="search-result-content">
+                        <span className="search-result-title">{result.label}</span>
+                        <span className="search-result-subtitle">{result.detail}</span>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
           <div className="topbar-right">
             <button className="topbar-icon-btn">
               <Bell size={20} />
             </button>
-            <div className="user-info">
-              <div className="user-avatar">
-                <User size={18} />
-              </div>
-              <div className="user-details">
-                <span className="user-name">
-                  {user?.firstName} {user?.lastName}
-                </span>
-                <span className="user-location">
-                  {user?.municipality && user?.province
-                    ? `${user.municipality}, ${user.province}`
-                    : user?.municipality || user?.province || ''}
-                </span>
-              </div>
+            <div className="user-menu" ref={profileMenuRef}>
+              <button
+                type="button"
+                className="user-info user-info-trigger"
+                onClick={() => setShowProfileMenu((prev) => !prev)}
+                aria-expanded={showProfileMenu}
+                aria-haspopup="menu"
+              >
+                <div className="user-avatar">
+                  <User size={18} />
+                </div>
+                <div className="user-details">
+                  <span className="user-name">
+                    {user?.firstName} {user?.lastName}
+                  </span>
+                  <span className="user-location">
+                    {user?.municipality && user?.province
+                      ? `${user.municipality}, ${user.province}`
+                      : user?.municipality || user?.province || ''}
+                  </span>
+                </div>
+                <ChevronDown size={14} className={`user-menu-chevron ${showProfileMenu ? 'user-menu-chevron--open' : ''}`} />
+              </button>
+              {showProfileMenu && (
+                <div className="user-dropdown" role="menu">
+                  <button
+                    type="button"
+                    className="user-dropdown-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setShowProfileMenu(false)
+                      setLogoutConfirm(true)
+                    }}
+                  >
+                    <LogOut size={15} />
+                    Log Out
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>
@@ -174,6 +343,21 @@ export default function DashboardLayout() {
           <Outlet />
         </div>
       </main>
+
+      <nav className="mobile-nav">
+        {mobileNavItems.map((item) => (
+          <NavLink
+            key={`mobile-${item.path}`}
+            to={item.path}
+            className={({ isActive }) =>
+              `mobile-nav-item ${isActive ? 'mobile-nav-item--active' : ''}`
+            }
+          >
+            <item.icon size={18} />
+            <span>{item.label}</span>
+          </NavLink>
+        ))}
+      </nav>
       
       <ConfirmDialog
         isOpen={logoutConfirm}

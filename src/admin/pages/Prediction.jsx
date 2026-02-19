@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { getCached, setCached } from '../../lib/queryCache'
 import {
     Download,
     ToggleLeft,
@@ -14,6 +15,9 @@ import {
 } from 'recharts'
 import './Prediction.css'
 
+const PREDICTION_CACHE_KEY = 'admin_prediction:overview'
+const PREDICTION_CACHE_TTL_MS = 2 * 60 * 1000
+
 export default function Prediction() {
     const [viewMode, setViewMode] = useState('overall') // 'overall' or 'farm'
     const [overallData, setOverallData] = useState([])
@@ -26,32 +30,47 @@ export default function Prediction() {
     }, [])
 
     const fetchPredictionData = async () => {
-        setLoading(true)
+        const cached = getCached(PREDICTION_CACHE_KEY, PREDICTION_CACHE_TTL_MS)
+        if (cached) {
+            setOverallData(cached.overallData)
+            setFarmData(cached.farmData)
+            setLoading(false)
+        } else {
+            setLoading(true)
+        }
+
         try {
-            // Fetch all clusters with stage data & farm info
-            const { data: clusters, error } = await supabase
-                .from('clusters')
-                .select('*, cluster_stage_data(*), farms!inner(id, farm_name, user_id, users!inner(first_name, last_name))')
+            const [clustersRes, harvestsRes] = await Promise.all([
+                supabase
+                    .from('clusters')
+                    .select('*, cluster_stage_data(*), farms!inner(id, farm_name, user_id, users!inner(first_name, last_name))'),
+                supabase
+                    .from('harvest_records')
+                    .select('*, clusters!inner(farm_id, farms!inner(farm_name))'),
+            ])
 
-            if (error) throw error
+            if (clustersRes.error || harvestsRes.error) {
+                throw clustersRes.error || harvestsRes.error
+            }
 
-            // Fetch harvest records for historical data
-            const { data: harvests } = await supabase
-                .from('harvest_records')
-                .select('*, clusters!inner(farm_id, farms!inner(farm_name))')
+            const clusters = (clustersRes.data || []).map((c) => ({
+                ...c,
+                stageData: Array.isArray(c.cluster_stage_data) ? c.cluster_stage_data[0] : c.cluster_stage_data,
+            }))
+            const harvests = harvestsRes.data || []
 
             // --- Overall aggregated data ---
             // Group yields by season from harvest_records
             const seasonMap = {}
-            harvests?.forEach((h) => {
+            harvests.forEach((h) => {
                 const season = h.season || 'Unknown'
                 if (!seasonMap[season]) seasonMap[season] = { season, actual: 0, predicted: 0 }
                 seasonMap[season].actual += parseFloat(h.yield_kg || 0)
             })
 
             // Add predicted yields from cluster_stage_data
-            clusters?.forEach((c) => {
-                const sd = c.cluster_stage_data
+            clusters.forEach((c) => {
+                const sd = c.stageData
                 if (sd?.harvest_season) {
                     if (!seasonMap[sd.harvest_season]) {
                         seasonMap[sd.harvest_season] = { season: sd.harvest_season, actual: 0, predicted: 0 }
@@ -67,17 +86,18 @@ export default function Prediction() {
             }))
 
             // If no data, show placeholder
-            setOverallData(overall.length > 0 ? overall : [
+            const nextOverallData = overall.length > 0 ? overall : [
                 { season: '2023 Dry', actual: 0, predicted: 0 },
                 { season: '2023 Wet', actual: 0, predicted: 0 },
                 { season: '2024 Dry', actual: 0, predicted: 0 },
                 { season: '2024 Wet', actual: 0, predicted: 0 },
                 { season: '2025 Dry', actual: 0, predicted: 0 },
-            ])
+            ]
+            setOverallData(nextOverallData)
 
             // --- Per-farm data ---
             const farmMap = {}
-            clusters?.forEach((c) => {
+            clusters.forEach((c) => {
                 const farm = c.farms
                 const farmId = farm?.id
                 if (!farmId) return
@@ -94,7 +114,7 @@ export default function Prediction() {
                     }
                 }
 
-                const sd = c.cluster_stage_data
+                const sd = c.stageData
                 const predicted = parseFloat(sd?.predicted_yield || 0)
                 const actual = parseFloat(sd?.current_yield || 0)
                 const previous = parseFloat(sd?.previous_yield || 0)
@@ -111,12 +131,18 @@ export default function Prediction() {
                 farmMap[farmId].totalPrevious += previous
             })
 
-            setFarmData(Object.values(farmMap).map((f) => ({
+            const nextFarmData = Object.values(farmMap).map((f) => ({
                 ...f,
                 totalPredicted: Math.round(f.totalPredicted),
                 totalActual: Math.round(f.totalActual),
                 totalPrevious: Math.round(f.totalPrevious),
-            })))
+            }))
+            setFarmData(nextFarmData)
+
+            setCached(PREDICTION_CACHE_KEY, {
+                overallData: nextOverallData,
+                farmData: nextFarmData,
+            })
         } catch (err) {
             console.error('Error fetching prediction data:', err)
         }

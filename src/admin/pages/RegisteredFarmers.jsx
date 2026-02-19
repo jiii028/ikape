@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
+import { getCached, setCached } from '../../lib/queryCache'
 import {
     Search,
     Plus,
@@ -16,6 +17,8 @@ import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
 import './RegisteredFarmers.css'
 
 const PAGE_SIZE = 10
+const REGISTERED_FARMERS_CACHE_KEY = 'admin_farmers:list'
+const REGISTERED_FARMERS_CACHE_TTL_MS = 2 * 60 * 1000
 
 export default function RegisteredFarmers() {
     const [farmers, setFarmers] = useState([])
@@ -37,11 +40,22 @@ export default function RegisteredFarmers() {
     const [successMessage, setSuccessMessage] = useState('')
 
     useEffect(() => {
-        fetchFarmers()
+        fetchFarmers(true)
     }, [])
 
-    const fetchFarmers = async () => {
-        setLoading(true)
+    const fetchFarmers = async (useCache = true) => {
+        if (useCache) {
+            const cached = getCached(REGISTERED_FARMERS_CACHE_KEY, REGISTERED_FARMERS_CACHE_TTL_MS)
+            if (cached) {
+                setFarmers(cached)
+                setLoading(false)
+            } else {
+                setLoading(true)
+            }
+        } else {
+            setLoading(true)
+        }
+
         try {
             // Fetch users with their farms and clusters
             const { data: users, error } = await supabase
@@ -68,6 +82,7 @@ export default function RegisteredFarmers() {
             }) || []
 
             setFarmers(enriched)
+            setCached(REGISTERED_FARMERS_CACHE_KEY, enriched)
         } catch (err) {
             console.error('Error fetching farmers:', err)
         }
@@ -208,7 +223,7 @@ export default function RegisteredFarmers() {
             setTimeout(() => {
                 setShowModal(false)
                 setSuccessMessage('')
-                fetchFarmers()
+                fetchFarmers(false)
             }, 1500)
         } catch (err) {
             setFormError(err.message)
@@ -229,7 +244,7 @@ export default function RegisteredFarmers() {
             const { error } = await supabase.from('users').delete().eq('id', deleteConfirm.id)
             if (error) throw error
             setDeleteConfirm(null)
-            fetchFarmers()
+            fetchFarmers(false)
         } catch (err) {
             console.error('Delete error:', err)
             setFormError('Failed to delete farmer: ' + err.message)

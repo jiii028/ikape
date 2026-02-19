@@ -34,6 +34,7 @@ export default function HarvestRecords() {
   const { getAllClusters, farm } = useFarm()
   const [seasonFilter, setSeasonFilter] = useState('')
   const [selectedCluster, setSelectedCluster] = useState(null)
+  const [mobilePanel, setMobilePanel] = useState('list')
 
   // Get clusters that are ready-to-harvest, flowering, or fruit-bearing
   const allClusters = getAllClusters()
@@ -111,13 +112,33 @@ export default function HarvestRecords() {
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
-            <ChevronDown size={14} />
+            <ChevronDown size={14} className="filter-chevron" />
           </div>
         </div>
       </div>
 
+      <div className="harvest-mobile-toggle">
+        <button
+          type="button"
+          className={`harvest-mobile-toggle-btn ${mobilePanel === 'list' ? 'active' : ''}`}
+          onClick={() => setMobilePanel('list')}
+        >
+          <Layers size={15} />
+          Cluster List
+        </button>
+        <button
+          type="button"
+          className={`harvest-mobile-toggle-btn ${mobilePanel === 'detail' ? 'active' : ''}`}
+          onClick={() => setMobilePanel('detail')}
+          disabled={!selectedCluster}
+        >
+          <BarChart3 size={15} />
+          Cluster Details
+        </button>
+      </div>
+
       {/* Cluster List */}
-      <div className="harvest-content">
+      <div className={`harvest-content ${mobilePanel === 'detail' ? 'harvest-content--detail' : 'harvest-content--list'}`}>
         <div className="cluster-list-panel">
           <h3>Active Clusters ({filteredClusters.length})</h3>
           {filteredClusters.length === 0 ? (
@@ -130,7 +151,10 @@ export default function HarvestRecords() {
                 <div
                   key={cluster.id}
                   className={`cluster-list-item ${selectedCluster?.id === cluster.id ? 'active' : ''}`}
-                  onClick={() => setSelectedCluster(cluster)}
+                  onClick={() => {
+                    setSelectedCluster(cluster)
+                    setMobilePanel('detail')
+                  }}
                 >
                   <div className="cli-top">
                     <span className="cli-name">{cluster.clusterName}</span>
@@ -164,7 +188,13 @@ export default function HarvestRecords() {
             <div className="detail-content">
               <div className="detail-header">
                 <h3>{selectedCluster.clusterName}</h3>
-                <button className="modal-close" onClick={() => setSelectedCluster(null)}>
+                <button
+                  className="modal-close"
+                  onClick={() => {
+                    setSelectedCluster(null)
+                    setMobilePanel('list')
+                  }}
+                >
                   <X size={18} />
                 </button>
               </div>

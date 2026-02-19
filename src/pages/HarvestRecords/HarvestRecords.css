@@ -35,14 +35,29 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 13px;
+  position: relative;
 }
 
 .filter-select select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   border: none;
   background: none;
+  background-image: none;
   color: var(--text-primary);
   font-size: 13px;
   cursor: pointer;
+  flex: 1;
+  min-width: 120px;
+  padding-right: 18px;
+}
+
+.filter-select .filter-chevron {
+  position: absolute;
+  right: 12px;
+  color: var(--text-light);
+  pointer-events: none;
 }
 
 /* Content Layout */
@@ -51,6 +66,10 @@
   grid-template-columns: 340px 1fr;
   gap: 20px;
   min-height: 600px;
+}
+
+.harvest-mobile-toggle {
+  display: none;
 }
 
 /* Cluster List Panel */
@@ -224,6 +243,7 @@
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
+  word-break: break-word;
 }
 
 /* Yield Summary Cards */
@@ -288,4 +308,117 @@
   height: 180px;
   color: var(--text-light);
   font-size: 13px;
+}
+
+@media (max-width: 1024px) {
+  .harvest-mobile-toggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .harvest-mobile-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    transition: var(--transition);
+  }
+
+  .harvest-mobile-toggle-btn.active {
+    border-color: #bbf7d0;
+    background: #f0fdf4;
+    color: var(--primary);
+  }
+
+  .harvest-mobile-toggle-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .harvest-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .harvest-filters {
+    width: 100%;
+  }
+
+  .filter-select {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .filter-select select {
+    width: 100%;
+  }
+
+  .harvest-content {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .harvest-content--list .cluster-detail-panel {
+    display: none;
+  }
+
+  .harvest-content--detail .cluster-list-panel {
+    display: none;
+  }
+
+  .cluster-list-panel {
+    max-height: 360px;
+  }
+
+  .detail-content {
+    padding: 16px;
+  }
+
+  .cluster-detail-panel {
+    overflow: visible;
+  }
+
+  .detail-info-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .harvest-page {
+    gap: 18px;
+  }
+
+  .harvest-header h1 {
+    font-size: 20px;
+  }
+
+  .detail-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .yield-summary,
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cluster-list-item {
+    padding: 12px 14px;
+  }
+
+  .detail-section h4 {
+    font-size: 14px;
+  }
+
+  .cli-details {
+    flex-direction: column;
+    gap: 6px;
+  }
 }

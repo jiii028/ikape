@@ -16,6 +16,8 @@ import {
   Edit,
   Mountain,
   Ruler,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 import ClusterFormModal from '../../components/ClusterFormModal/ClusterFormModal'
 import FarmFormModal from '../../components/FarmFormModal/FarmFormModal'
@@ -29,11 +31,19 @@ const STAGE_CONFIG = {
   'ready-to-harvest': { label: 'Ready to Harvest', icon: Coffee, color: '#f87171', bg: '#fef2f2' },
 }
 
+const STAGE_OVERVIEW = {
+  'seed-sapling': { label: 'Seed / Sapling', icon: Sprout },
+  'tree': { label: 'Tree', icon: TreePine },
+  'flowering': { label: 'Flowering / Fruit-bearing', icon: Flower2 },
+  'ready-to-harvest': { label: 'Ready to Harvest', icon: Coffee },
+}
+
 export default function Dashboard() {
   const { farm, clusters, deleteCluster } = useFarm()
   const navigate = useNavigate()
   const [showClusterForm, setShowClusterForm] = useState(false)
   const [showFarmForm, setShowFarmForm] = useState(false)
+  const [clustersVisible, setClustersVisible] = useState(true)
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, clusterId: null, clusterName: '' })
 
   const farmHasDetails = farm && farm.farm_name && farm.farm_name !== 'My Farm' && farm.farm_area
@@ -85,7 +95,10 @@ export default function Dashboard() {
       ) : (
         <div className="farm-info-card">
           <div className="farm-info-header">
-            <h3>🌿 {farm.farm_name}</h3>
+            <h3 className="farm-title">
+              <Leaf size={18} />
+              {farm.farm_name}
+            </h3>
             <button className="btn-icon" onClick={() => setShowFarmForm(true)} title="Edit Farm">
               <Edit size={16} />
             </button>
@@ -168,76 +181,92 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="farms-section">
-          <h2 className="section-title">
-            <Layers size={20} />
-            Your Clusters
-          </h2>
-          <div className="farms-grid">
-            {clusters.map((cluster) => {
-              const config = STAGE_CONFIG[cluster.plantStage] || STAGE_CONFIG['seed-sapling']
-              const StageIcon = config.icon
-              return (
-                <div
-                  key={cluster.id}
-                  className="farm-card"
-                  style={{ borderLeft: `4px solid ${config.color}` }}
-                  onClick={() => navigate(`/clusters/${cluster.id}/overview`)}
-                >
-                  <div className="farm-card-header">
-                    <h3>{cluster.clusterName}</h3>
-                    <button
-                      className="tile-action-btn"
-                      title="Delete"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setDeleteConfirm({ 
-                          isOpen: true, 
-                          clusterId: cluster.id, 
-                          clusterName: cluster.clusterName 
-                        })
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                  <div className="farm-card-body">
-                    <div className="farm-detail">
-                      <StageIcon size={14} style={{ color: config.color }} />
-                      <span style={{ color: config.color, fontWeight: 600 }}>{config.label}</span>
+          <div className="section-header-row">
+            <h2 className="section-title">
+              <Layers size={20} />
+              Your Clusters
+            </h2>
+            <button
+              type="button"
+              className="cluster-visibility-btn"
+              onClick={() => setClustersVisible((prev) => !prev)}
+            >
+              {clustersVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+              {clustersVisible ? 'Hide All' : 'Show All'}
+            </button>
+          </div>
+          {clustersVisible ? (
+            <div className="farms-grid">
+              {clusters.map((cluster) => {
+                const config = STAGE_CONFIG[cluster.plantStage] || STAGE_CONFIG['seed-sapling']
+                const StageIcon = config.icon
+                return (
+                  <div
+                    key={cluster.id}
+                    className="farm-card"
+                    style={{ borderLeft: `4px solid ${config.color}` }}
+                    onClick={() => navigate(`/clusters/${cluster.id}/overview`)}
+                  >
+                    <div className="farm-card-header">
+                      <h3>{cluster.clusterName}</h3>
+                      <button
+                        className="tile-action-btn"
+                        title="Delete"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDeleteConfirm({
+                            isOpen: true,
+                            clusterId: cluster.id,
+                            clusterName: cluster.clusterName
+                          })
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </div>
-                    <div className="farm-detail">
-                      <Layers size={14} />
-                      <span>{cluster.areaSize} sqm</span>
+                    <div className="farm-card-body">
+                      <div className="farm-detail">
+                        <StageIcon size={14} style={{ color: config.color }} />
+                        <span style={{ color: config.color, fontWeight: 600 }}>{config.label}</span>
+                      </div>
+                      <div className="farm-detail">
+                        <Layers size={14} />
+                        <span>{cluster.areaSize} sqm</span>
+                      </div>
+                      <div className="farm-detail">
+                        <Sprout size={14} />
+                        <span>{cluster.plantCount} plants</span>
+                        {cluster.plantStage === 'flowering' && (
+                          <>
+                            <span className="farm-detail-separator" aria-hidden="true"></span>
+                            <CalendarDays size={14} />
+                            <span>Estimated: {formatEstimatedDate(cluster.stageData?.estimatedHarvestDate)}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div className="farm-detail">
-                      <Sprout size={14} />
-                      <span>{cluster.plantCount} plants</span>
-                      {cluster.plantStage === 'flowering' && (
-                        <>
-                          <span>•</span>
-                          <CalendarDays size={14} />
-                          <span>Estimated: {formatEstimatedDate(cluster.stageData?.estimatedHarvestDate)}</span>
-                        </>
+                    <div className="farm-card-footer">
+                      {cluster.plantStage === 'ready-to-harvest' && (
+                        <span className="harvest-badge">
+                          <TrendingUp size={12} />
+                          Harvest Ready
+                        </span>
                       )}
                     </div>
                   </div>
-                  <div className="farm-card-footer">
-                    {cluster.plantStage === 'ready-to-harvest' && (
-                      <span className="harvest-badge">
-                        <TrendingUp size={12} />
-                        Harvest Ready
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="clusters-hidden-note">
+              All clusters are hidden. Use "Show All" to display them again.
+            </div>
+          )}
         </div>
       )}
 
       {/* Plant Stage Overview */}
-      {clusters.length > 0 && (
+      {clusters.length > 0 && clustersVisible && (
         <div className="stage-overview">
           <h2 className="section-title">
             <BarChart3 size={20} />
@@ -246,17 +275,15 @@ export default function Dashboard() {
           <div className="stage-cards">
             {['seed-sapling', 'tree', 'flowering', 'ready-to-harvest'].map((stage) => {
               const count = clusters.filter((c) => c.plantStage === stage).length
-              const labels = {
-                'seed-sapling': { label: 'Seed / Sapling', emoji: '🌱' },
-                'tree': { label: 'Tree', emoji: '🌳' },
-                'flowering': { label: 'Flowering / Fruit-bearing', emoji: '🌸' },
-                'ready-to-harvest': { label: 'Ready to Harvest', emoji: '☕' },
-              }
+              const overview = STAGE_OVERVIEW[stage]
+              const StageOverviewIcon = overview.icon
               return (
                 <div key={stage} className={`stage-card stage-card--${stage}`}>
-                  <span className="stage-emoji">{labels[stage].emoji}</span>
+                  <span className="stage-icon" aria-hidden="true">
+                    <StageOverviewIcon size={24} />
+                  </span>
                   <span className="stage-count">{count}</span>
-                  <span className="stage-label">{labels[stage].label}</span>
+                  <span className="stage-label">{overview.label}</span>
                 </div>
               )
             })}

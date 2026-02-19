@@ -21,6 +21,45 @@
   margin-top: 2px;
 }
 
+.reco-header .harvest-filters {
+  display: flex;
+  gap: 10px;
+}
+
+.reco-header .filter-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  position: relative;
+}
+
+.reco-header .filter-select select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  border: none;
+  background: none;
+  background-image: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 120px;
+  padding-right: 18px;
+}
+
+.reco-header .filter-select .filter-chevron {
+  position: absolute;
+  right: 12px;
+  color: var(--text-light);
+  pointer-events: none;
+}
+
 /* Summary */
 .reco-summary {
   display: grid;
@@ -64,6 +103,10 @@
   grid-template-columns: 1fr 1fr;
   gap: 20px;
   min-height: 500px;
+}
+
+.reco-mobile-toggle {
+  display: none;
 }
 
 /* Cluster List */
@@ -238,4 +281,107 @@
   font-size: 13px;
   color: var(--text-primary);
   line-height: 1.5;
+  word-break: break-word;
+}
+
+@media (max-width: 1024px) {
+  .reco-mobile-toggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .reco-mobile-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    transition: var(--transition);
+  }
+
+  .reco-mobile-toggle-btn.active {
+    border-color: #bbf7d0;
+    background: #f0fdf4;
+    color: var(--primary);
+  }
+
+  .reco-mobile-toggle-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .reco-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .reco-header .harvest-filters {
+    width: 100%;
+  }
+
+  .reco-header .filter-select {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .reco-header .filter-select select {
+    width: 100%;
+  }
+
+  .reco-content {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .reco-content--list .reco-detail {
+    display: none;
+  }
+
+  .reco-content--detail .reco-list {
+    display: none;
+  }
+
+  .reco-list {
+    max-height: 360px;
+  }
+
+  .reco-detail {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  .reco-page {
+    gap: 18px;
+  }
+
+  .reco-header h1 {
+    font-size: 20px;
+  }
+
+  .reco-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .reco-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px 14px;
+  }
+
+  .reco-item-right {
+    align-items: flex-start;
+  }
+
+  .issue-header {
+    flex-wrap: wrap;
+  }
 }
