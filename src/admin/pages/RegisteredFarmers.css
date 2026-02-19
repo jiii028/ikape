@@ -1,0 +1,380 @@
+/* ===== REGISTERED FARMERS PAGE ===== */
+.farmers-page {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.farmers-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.farmers-header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+.farmers-header p {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-top: 2px;
+}
+
+.farmers-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.farmers-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    padding: 10px 16px;
+    border-radius: 8px;
+    width: 300px;
+}
+
+.farmers-search input {
+    border: none;
+    background: none;
+    font-size: 13px;
+    color: #1e293b;
+    width: 100%;
+}
+
+.farmers-search input::placeholder {
+    color: #94a3b8;
+}
+
+.farmers-search svg {
+    color: #94a3b8;
+    flex-shrink: 0;
+}
+
+.farmers-add-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.farmers-add-btn:hover {
+    box-shadow: 0 4px 16px rgba(34, 197, 94, 0.3);
+    transform: translateY(-1px);
+}
+
+/* ===== TABLE ===== */
+.farmers-table-wrapper {
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    border: 1px solid #f1f5f9;
+    overflow-x: auto;
+}
+
+.farmers-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 900px;
+}
+
+.farmers-table th,
+.farmers-table td {
+    padding: 12px 14px;
+    text-align: left;
+    font-size: 13px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.farmers-table th {
+    font-weight: 600;
+    color: #64748b;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: #f8fafc;
+    white-space: nowrap;
+}
+
+.farmers-table td {
+    color: #334155;
+}
+
+.farmers-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+.farmer-name-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    color: #1e293b !important;
+    white-space: nowrap;
+}
+
+.farmer-avatar-sm {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.status-badge {
+    display: inline-flex;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.farmer-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.farmer-action-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.farmer-action-btn:hover {
+    background: #e2e8f0;
+    color: #1e293b;
+}
+
+.farmer-action-btn--delete:hover {
+    background: #fef2f2;
+    color: #ef4444;
+}
+
+.farmers-empty {
+    text-align: center;
+    padding: 40px !important;
+    color: #94a3b8;
+}
+
+/* ===== PAGINATION ===== */
+.farmers-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+}
+
+.farmers-pagination button {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.farmers-pagination button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.farmers-pagination button:not(:disabled):hover {
+    background: #f1f5f9;
+}
+
+.farmers-pagination span {
+    font-size: 13px;
+    color: #64748b;
+}
+
+/* ===== FARMER FORM ===== */
+.farmer-form {
+    padding: 24px;
+}
+
+.farmer-form-error {
+    background: #fef2f2;
+    color: #dc2626;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 16px;
+    border: 1px solid #fecaca;
+}
+
+.farmer-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.farmer-form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.farmer-form-field label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+}
+
+.farmer-form-field input {
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #1e293b;
+    transition: all 0.2s ease;
+}
+
+.farmer-form-field input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.farmer-form-field input:disabled {
+    background: #f8fafc;
+    color: #94a3b8;
+}
+
+.farmer-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding-top: 16px;
+    border-top: 1px solid #f1f5f9;
+}
+
+.farmer-cancel-btn {
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 8px;
+    background: #f1f5f9;
+    color: #475569;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.farmer-cancel-btn:hover {
+    background: #e2e8f0;
+}
+
+.farmer-save-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    color: #fff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.farmer-save-btn:hover {
+    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+}
+
+/* ===== DELETE CONFIRM ===== */
+.delete-confirm-modal {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 32px;
+    max-width: 400px;
+    text-align: center;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.2);
+}
+
+.delete-confirm-modal h3 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 12px 0 8px;
+}
+
+.delete-confirm-modal p {
+    font-size: 13px;
+    color: #64748b;
+    line-height: 1.6;
+    margin-bottom: 20px;
+}
+
+.delete-confirm-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.farmer-delete-confirm-btn {
+    padding: 10px 24px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: #fff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.farmer-delete-confirm-btn:hover {
+    box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);
+}
+
+@media (max-width: 768px) {
+    .farmers-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .farmers-header-actions {
+        width: 100%;
+        flex-direction: column;
+    }
+
+    .farmers-search {
+        width: 100%;
+    }
+
+    .farmer-form-grid {
+        grid-template-columns: 1fr;
+    }
+}

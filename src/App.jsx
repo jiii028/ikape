@@ -9,19 +9,51 @@ import HarvestRecords from './pages/HarvestRecords/HarvestRecords'
 import Recommendations from './pages/Recommendations/Recommendations'
 import Settings from './pages/Settings/Settings'
 import ClusterDetail from './pages/ClusterDetail/ClusterDetail'
+import LoadingScreen from './components/LoadingScreen'
 
-function ProtectedRoute({ children }) {
+// Admin imports
+import AdminLayout from './admin/AdminLayout'
+import AdminDashboard from './admin/pages/AdminDashboard'
+import RegisteredFarmers from './admin/pages/RegisteredFarmers'
+import Prediction from './admin/pages/Prediction'
+
+// ===== STRICT ROUTE GUARDS =====
+
+// Farmer-only routes: must be logged in AND role === 'farmer'
+function FarmerRoute({ children }) {
   const { user, loading } = useAuth()
-  if (loading) return null
+  if (loading) return <LoadingScreen message="Loading your farm..." />
   if (!user) return <Navigate to="/login" replace />
+  if (user.role !== 'farmer') return <Navigate to="/login" replace />
   return children
 }
 
+// Admin-only routes: must be logged in AND role === 'admin'
+function AdminRoute({ children }) {
+  const { user, loading } = useAuth()
+  if (loading) return <LoadingScreen message="Loading admin panel..." />
+  if (!user) return <Navigate to="/login" replace />
+  if (user.role !== 'admin') return <Navigate to="/login" replace />
+  return children
+}
+
+// Guest routes: only accessible if NOT logged in
 function GuestRoute({ children }) {
   const { user, loading } = useAuth()
-  if (loading) return null
-  if (user) return <Navigate to="/dashboard" replace />
+  if (loading) return <LoadingScreen message="Checking your session..." />
+  if (user) {
+    // Redirect to correct dashboard based on DB role
+    return <Navigate to={user.role === 'admin' ? '/admin/dashboard' : '/dashboard'} replace />
+  }
   return children
+}
+
+// Root "/" handler: redirects based on role or to login
+function HomeRedirect() {
+  const { user, loading } = useAuth()
+  if (loading) return <LoadingScreen message="Welcome to IKAPE..." />
+  if (!user) return <Navigate to="/login" replace />
+  return <Navigate to={user.role === 'admin' ? '/admin/dashboard' : '/dashboard'} replace />
 }
 
 function App() {
@@ -29,16 +61,31 @@ function App() {
     <AuthProvider>
       <FarmProvider>
         <Routes>
+          {/* Public routes */}
           <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
           <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
-          <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
+
+          {/* Root redirects based on role */}
+          <Route path="/" element={<HomeRedirect />} />
+
+          {/* Farmer Routes — STRICTLY role === 'farmer' */}
+          <Route element={<FarmerRoute><DashboardLayout /></FarmerRoute>}>
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="clusters/:clusterId/:section?" element={<ClusterDetail />} />
             <Route path="harvest" element={<HarvestRecords />} />
             <Route path="recommendations" element={<Recommendations />} />
             <Route path="settings" element={<Settings />} />
           </Route>
+
+          {/* Admin Routes — STRICTLY role === 'admin' */}
+          <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
+            <Route index element={<Navigate to="/admin/dashboard" replace />} />
+            <Route path="dashboard" element={<AdminDashboard />} />
+            <Route path="farmers" element={<RegisteredFarmers />} />
+            <Route path="prediction" element={<Prediction />} />
+          </Route>
+
+          {/* Catch-all: redirect unknown routes to login */}
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </FarmProvider>
