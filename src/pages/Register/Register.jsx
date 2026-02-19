@@ -44,9 +44,16 @@ export default function Register() {
       setError('Password must be at least 6 characters')
       return
     }
-    const success = await register(form)
-    if (success) {
-      navigate('/login')
+    const result = await register(form)
+    if (result && result.success) {
+      if (result.requiresConfirmation) {
+        // Email confirmation required
+        alert('Registration successful! Please check your email to confirm your account before logging in.')
+        navigate('/login')
+      } else {
+        // Auto-login successful
+        navigate('/dashboard')
+      }
     }
   }
 

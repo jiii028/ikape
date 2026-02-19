@@ -15,53 +15,75 @@ export function FarmProvider({ children }) {
     if (!authUser) {
       setFarm(null)
       setClusters([])
+      setLoading(false)
       return
     }
-    setLoading(true)
+    
+    try {
+      setLoading(true)
 
-    // Get user's farm — use maybeSingle() so no error if row doesn't exist yet
-    const { data: farmRow, error: farmErr } = await supabase
-      .from('farms')
-      .select('*')
-      .eq('user_id', authUser.id)
-      .maybeSingle()
-
-    if (farmRow) {
-      setFarm(farmRow)
-
-      // Get clusters for this farm
-      const { data: clusterRows } = await supabase
-        .from('clusters')
-        .select('*, cluster_stage_data(*)')
-        .eq('farm_id', farmRow.id)
-        .order('created_at', { ascending: true })
-
-      setClusters(
-        (clusterRows || []).map((c) => ({
-          id: c.id,
-          clusterName: c.cluster_name,
-          areaSize: c.area_size,
-          plantCount: c.plant_count,
-          plantStage: c.plant_stage,
-          createdAt: c.created_at,
-          stageData: c.cluster_stage_data?.[0]
-            ? mapStageDataFromDb(c.cluster_stage_data[0])
-            : null,
-          harvestRecords: [], // loaded on demand
-        }))
-      )
-    } else {
-      // Auto-create a farm row for the user so clusters can be added
-      const { data: newFarm } = await supabase
+      // Get user's farm — use maybeSingle() so no error if row doesn't exist yet
+      const { data: farmRow, error: farmErr } = await supabase
         .from('farms')
-        .insert({ user_id: authUser.id, farm_name: 'My Farm' })
-        .select()
-        .single()
-      setFarm(newFarm)
-      setClusters([])
-    }
+        .select('*')
+        .eq('user_id', authUser.id)
+        .maybeSingle()
 
-    setLoading(false)
+      if (farmErr) {
+        console.error('Error fetching farm:', farmErr.message)
+        setLoading(false)
+        return
+      }
+
+      if (farmRow) {
+        setFarm(farmRow)
+
+        // Get clusters for this farm
+        const { data: clusterRows, error: clusterErr } = await supabase
+          .from('clusters')
+          .select('*, cluster_stage_data(*)')
+          .eq('farm_id', farmRow.id)
+          .order('created_at', { ascending: true })
+
+        if (clusterErr) {
+          console.error('Error fetching clusters:', clusterErr.message)
+          setClusters([])
+        } else {
+          setClusters(
+            (clusterRows || []).map((c) => ({
+              id: c.id,
+              clusterName: c.cluster_name,
+              areaSize: c.area_size,
+              plantCount: c.plant_count,
+              plantStage: c.plant_stage,
+              createdAt: c.created_at,
+              stageData: c.cluster_stage_data?.[0]
+                ? mapStageDataFromDb(c.cluster_stage_data[0])
+                : null,
+              harvestRecords: [], // loaded on demand
+            }))
+          )
+        }
+      } else {
+        // Auto-create a farm row for the user so clusters can be added
+        const { data: newFarm, error: createErr } = await supabase
+          .from('farms')
+          .insert({ user_id: authUser.id, farm_name: 'My Farm' })
+          .select()
+          .single()
+        
+        if (createErr) {
+          console.error('Error creating farm:', createErr.message)
+        } else {
+          setFarm(newFarm)
+        }
+        setClusters([])
+      }
+    } catch (err) {
+      console.error('fetchFarmData error:', err)
+    } finally {
+      setLoading(false)
+    }
   }, [authUser])
 
   useEffect(() => {
