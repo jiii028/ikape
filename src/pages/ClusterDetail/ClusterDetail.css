@@ -249,10 +249,14 @@
   cursor: not-allowed;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .cd-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .cd-title h1 {
+    font-size: 22px;
   }
 
   .cd-stage {
@@ -262,6 +266,14 @@
   .cd-stage select {
     width: 100%;
     min-width: 0;
+  }
+
+  .cd-card {
+    padding: 16px;
+  }
+
+  .cd-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .harvest-form-toolbar {
@@ -275,5 +287,39 @@
 
   .harvest-toolbar-btn {
     flex: 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .cluster-detail-page {
+    gap: 16px;
+  }
+
+  .cd-title h1 {
+    font-size: 20px;
+  }
+
+  .cd-form-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .cd-actions {
+    justify-content: stretch;
+  }
+
+  .cd-save-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .harvest-group-header {
+    padding: 10px 12px;
+    align-items: flex-start;
+  }
+
+  .harvest-group-meta {
+    width: 100%;
+    justify-content: space-between;
   }
 }

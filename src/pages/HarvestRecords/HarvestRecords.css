@@ -289,3 +289,68 @@
   color: var(--text-light);
   font-size: 13px;
 }
+
+@media (max-width: 1024px) {
+  .harvest-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .harvest-filters {
+    width: 100%;
+  }
+
+  .filter-select {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .filter-select select {
+    width: 100%;
+  }
+
+  .harvest-content {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .cluster-list-panel {
+    max-height: 320px;
+  }
+
+  .detail-content {
+    padding: 16px;
+  }
+
+  .detail-info-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .harvest-page {
+    gap: 18px;
+  }
+
+  .harvest-header h1 {
+    font-size: 20px;
+  }
+
+  .detail-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .yield-summary,
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cluster-list-item {
+    padding: 12px 14px;
+  }
+
+  .cli-details {
+    flex-direction: column;
+    gap: 6px;
+  }
+}

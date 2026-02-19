@@ -206,3 +206,49 @@
 .btn-logout:hover {
   background: #fef2f2;
 }
+
+@media (max-width: 1024px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-card {
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .settings-page {
+    gap: 18px;
+  }
+
+  .settings-header h1 {
+    font-size: 20px;
+  }
+
+  .settings-card {
+    padding: 16px;
+  }
+
+  .settings-form-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .profile-detail-item {
+    grid-template-columns: 16px 72px 1fr;
+    padding: 8px 0;
+  }
+
+  .settings-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .btn-save,
+  .btn-logout {
+    justify-content: center;
+    width: 100%;
+  }
+}

@@ -239,3 +239,65 @@
   color: var(--text-primary);
   line-height: 1.5;
 }
+
+@media (max-width: 1024px) {
+  .reco-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .reco-header .harvest-filters {
+    width: 100%;
+  }
+
+  .reco-header .filter-select {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .reco-header .filter-select select {
+    width: 100%;
+  }
+
+  .reco-content {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .reco-list {
+    max-height: 360px;
+  }
+
+  .reco-detail {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  .reco-page {
+    gap: 18px;
+  }
+
+  .reco-header h1 {
+    font-size: 20px;
+  }
+
+  .reco-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .reco-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px 14px;
+  }
+
+  .reco-item-right {
+    align-items: flex-start;
+  }
+
+  .issue-header {
+    flex-wrap: wrap;
+  }
+}
