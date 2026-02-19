@@ -24,7 +24,9 @@ function FarmerRoute({ children }) {
   const { user, loading } = useAuth()
   if (loading) return <LoadingScreen message="Loading your farm..." />
   if (!user) return <Navigate to="/login" replace />
-  if (user.role !== 'farmer') return <Navigate to="/login" replace />
+  if (user.role !== 'farmer') {
+    return <Navigate to={user.role === 'admin' ? '/admin/dashboard' : '/dashboard'} replace />
+  }
   return children
 }
 
@@ -33,7 +35,9 @@ function AdminRoute({ children }) {
   const { user, loading } = useAuth()
   if (loading) return <LoadingScreen message="Loading admin panel..." />
   if (!user) return <Navigate to="/login" replace />
-  if (user.role !== 'admin') return <Navigate to="/login" replace />
+  if (user.role !== 'admin') {
+    return <Navigate to={user.role === 'farmer' ? '/dashboard' : '/admin/dashboard'} replace />
+  }
   return children
 }
 
@@ -85,8 +89,8 @@ function App() {
             <Route path="prediction" element={<Prediction />} />
           </Route>
 
-          {/* Catch-all: redirect unknown routes to login */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          {/* Catch-all: keep authenticated users in their dashboard, guests to login */}
+          <Route path="*" element={<HomeRedirect />} />
         </Routes>
       </FarmProvider>
     </AuthProvider>

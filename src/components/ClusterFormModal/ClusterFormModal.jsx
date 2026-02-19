@@ -5,7 +5,7 @@ import ConfirmDialog from '../ConfirmDialog/ConfirmDialog'
 import '../FarmFormModal/FarmFormModal.css'
 
 export default function ClusterFormModal({ onClose, editData }) {
-  const { addCluster, updateCluster } = useFarm()
+  const { farm, clusters, addCluster, updateCluster } = useFarm()
   const [form, setForm] = useState(
     editData || {
       clusterName: '',
@@ -17,6 +17,7 @@ export default function ClusterFormModal({ onClose, editData }) {
   const [isDirty, setIsDirty] = useState(false)
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
+  const [formError, setFormError] = useState('')
 
   useEffect(() => {
     // Track if form has been modified
@@ -26,16 +27,65 @@ export default function ClusterFormModal({ onClose, editData }) {
   }, [form, editData])
 
   const handleChange = (e) => {
+    setFormError('')
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
+  }
+
+  const validateClusterInputs = () => {
+    if (!form.clusterName || form.areaSize === '' || form.plantCount === '') {
+      return 'Please fill in all required fields.'
+    }
+
+    const inputArea = parseFloat(form.areaSize)
+    const inputPlantCount = parseInt(form.plantCount, 10)
+
+    if (!Number.isFinite(inputArea) || inputArea <= 0) {
+      return 'Area size must be greater than 0.'
+    }
+
+    if (!Number.isInteger(inputPlantCount) || inputPlantCount <= 0) {
+      return 'Plant count must be a whole number greater than 0.'
+    }
+
+    const otherClusters = clusters.filter((cluster) => cluster.id !== editData?.id)
+    const usedArea = otherClusters.reduce((sum, cluster) => sum + (parseFloat(cluster.areaSize) || 0), 0)
+    const usedPlantCount = otherClusters.reduce((sum, cluster) => sum + (parseInt(cluster.plantCount, 10) || 0), 0)
+
+    const projectedArea = usedArea + inputArea
+    const projectedPlantCount = usedPlantCount + inputPlantCount
+
+    const maxFarmArea = parseFloat(farm?.farm_area)
+    if (Number.isFinite(maxFarmArea) && maxFarmArea > 0 && projectedArea > maxFarmArea) {
+      const remainingArea = Math.max(maxFarmArea - usedArea, 0)
+      return `Area size exceeds your registered farm area. Remaining allocatable area: ${remainingArea.toFixed(2)}.`
+    }
+
+    const maxTreeCount = parseInt(farm?.overall_tree_count, 10)
+    if (Number.isInteger(maxTreeCount) && maxTreeCount > 0 && projectedPlantCount > maxTreeCount) {
+      const remainingPlantCount = Math.max(maxTreeCount - usedPlantCount, 0)
+      return `Plant count exceeds your registered tree count. Remaining allocatable plants: ${remainingPlantCount}.`
+    }
+
+    return ''
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.clusterName || !form.areaSize || !form.plantCount) return
+    const validationError = validateClusterInputs()
+    if (validationError) {
+      setFormError(validationError)
+      return
+    }
     setShowSaveConfirm(true)
   }
 
   const doSave = async () => {
+    const validationError = validateClusterInputs()
+    if (validationError) {
+      setFormError(validationError)
+      return
+    }
+
     if (editData) {
       await updateCluster(editData.id, form)
     } else {
@@ -63,6 +113,8 @@ export default function ClusterFormModal({ onClose, editData }) {
         </div>
 
         <form onSubmit={handleSubmit} className="modal-form">
+          {formError && <div className="modal-form-error">{formError}</div>}
+
           <div className="form-group">
             <label>Cluster Name *</label>
             <input
@@ -81,6 +133,7 @@ export default function ClusterFormModal({ onClose, editData }) {
                 name="areaSize"
                 type="number"
                 step="0.01"
+                min="0.01"
                 value={form.areaSize}
                 onChange={handleChange}
                 placeholder="e.g. 1.2"
@@ -92,6 +145,8 @@ export default function ClusterFormModal({ onClose, editData }) {
               <input
                 name="plantCount"
                 type="number"
+                min="1"
+                step="1"
                 value={form.plantCount}
                 onChange={handleChange}
                 placeholder="e.g. 500"

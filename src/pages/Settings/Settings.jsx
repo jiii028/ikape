@@ -42,7 +42,7 @@ export default function Settings() {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate('/login', { replace: true });
   };
 
   return (

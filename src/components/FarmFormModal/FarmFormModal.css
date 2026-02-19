@@ -56,6 +56,16 @@
   gap: 16px;
 }
 
+.modal-form-error {
+  padding: 10px 12px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .modal-form .form-group label {
   font-size: 13px;
   font-weight: 600;

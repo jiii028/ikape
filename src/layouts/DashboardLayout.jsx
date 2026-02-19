@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard,
@@ -15,9 +15,13 @@ import {
   Scissors,
   FlaskConical,
   ShieldAlert,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog/ConfirmDialog'
 import './DashboardLayout.css'
+
+const SIDEBAR_PREF_KEY = 'ikape_farmer_sidebar_collapsed'
 
 export default function DashboardLayout() {
   const { user, logout } = useAuth()
@@ -26,10 +30,46 @@ export default function DashboardLayout() {
   const { clusterId } = useParams()
   const isClusterRoute = location.pathname.startsWith('/clusters/')
   const [logoutConfirm, setLogoutConfirm] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_PREF_KEY) === 'true'
+    } catch {
+      return false
+    }
+  })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_PREF_KEY, String(isSidebarCollapsed))
+    } catch {
+      // Ignore storage write errors in restricted browser contexts.
+    }
+  }, [isSidebarCollapsed])
+
+  useEffect(() => {
+    const handleKeyToggle = (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'b') return
+
+      const target = event.target
+      const isTypingTarget =
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+
+      if (isTypingTarget) return
+      event.preventDefault()
+      setIsSidebarCollapsed((prev) => !prev)
+    }
+
+    window.addEventListener('keydown', handleKeyToggle)
+    return () => window.removeEventListener('keydown', handleKeyToggle)
+  }, [])
 
   const handleLogout = async () => {
     await logout()
-    navigate('/login')
+    navigate('/login', { replace: true })
   }
 
   const appNavItems = [
@@ -53,10 +93,24 @@ export default function DashboardLayout() {
 
   return (
     <div className="layout">
-      <aside className="sidebar">
+      <aside className={`sidebar ${isSidebarCollapsed ? 'sidebar--collapsed' : ''}`}>
         <div className="sidebar-header">
           <Sprout size={28} className="sidebar-logo-icon" />
           <span className="sidebar-title">IKAPE</span>
+          <button
+            type="button"
+            className={`sidebar-toggle ${isSidebarCollapsed ? 'sidebar-toggle--collapsed' : ''}`}
+            onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+            aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!isSidebarCollapsed}
+            title={isSidebarCollapsed ? 'Show labels (Ctrl+B)' : 'Hide labels (Ctrl+B)'}
+          >
+            {isSidebarCollapsed ? (
+              <ChevronRight size={16} className="sidebar-toggle-icon" />
+            ) : (
+              <ChevronLeft size={16} className="sidebar-toggle-icon" />
+            )}
+          </button>
         </div>
 
         <nav className="sidebar-nav">
@@ -88,7 +142,7 @@ export default function DashboardLayout() {
         </div>
       </aside>
 
-      <main className="main-content">
+      <main className={`main-content ${isSidebarCollapsed ? 'main-content--expanded' : ''}`}>
         <header className="topbar">
           <div className="search-bar">
             <Search size={18} className="search-icon" />

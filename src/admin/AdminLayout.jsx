@@ -34,7 +34,7 @@ export default function AdminLayout() {
             if (timeoutRef.current) clearTimeout(timeoutRef.current)
             timeoutRef.current = setTimeout(async () => {
                 await logout()
-                navigate('/login')
+                navigate('/login', { replace: true })
             }, SESSION_TIMEOUT_MS)
         }
 
@@ -50,7 +50,7 @@ export default function AdminLayout() {
 
     const handleLogout = async () => {
         await logout()
-        navigate('/login')
+        navigate('/login', { replace: true })
     }
 
     const navItems = [
