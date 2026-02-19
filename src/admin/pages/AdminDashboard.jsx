@@ -67,9 +67,9 @@ export default function AdminDashboard() {
         totalFarmers: 0,
         totalFarms: 0,
         totalClusters: 0,
-        predictedYield: 0,
+        predictedYield: 0, // Placeholder until backend provides this
         actualYield: 0,
-        previousYield: 0,
+        previousYield: 0, // Placeholder
     })
     const [criticalFarms, setCriticalFarms] = useState([])
     const [yieldTrend, setYieldTrend] = useState([])
@@ -87,8 +87,38 @@ export default function AdminDashboard() {
     const [notifyDialog, setNotifyDialog] = useState({ open: false, clusterName: '' })
     const [exportDialog, setExportDialog] = useState(false)
 
+
     useEffect(() => {
-        fetchDashboardData()
+        // Fetch from new Python Backend
+        fetchOverview().then(data => {
+            console.log("Analytics Data from Backend:", data);
+
+            // Update state with backend data
+            setStats(prev => ({
+                ...prev,
+                totalFarmers: data.total_farmers,
+                totalClusters: data.total_clusters,
+                actualYield: data.total_yield_kg,
+                // Map other fields as backend availability improves
+                totalFarms: prev.totalFarms, // Backend doesn't return farm count in top metrics yet, only users/clusters/regions
+            }));
+
+            // Map Grade Distribution
+            if (data.charts && data.charts.grade_mix) {
+                const mix = data.charts.grade_mix;
+                const total = mix.Fine + mix.Premium + mix.Commercial;
+                if (total > 0) {
+                    setGradeDistribution([
+                        { name: 'Fine', value: mix.Fine, pct: ((mix.Fine / total) * 100).toFixed(1) },
+                        { name: 'Premium', value: mix.Premium, pct: ((mix.Premium / total) * 100).toFixed(1) },
+                        { name: 'Commercial', value: mix.Commercial, pct: ((mix.Commercial / total) * 100).toFixed(1) },
+                    ]);
+                }
+            }
+        }).catch(err => console.error("Backend fetch error:", err));
+
+        // Keep existing fetch for now to fill gaps (like critical farms list)
+        fetchDashboardData();
     }, [])
 
     const fetchDashboardData = async () => {
