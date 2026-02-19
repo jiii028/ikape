@@ -130,6 +130,7 @@ export default function ClusterDetailModal({ cluster, onClose }) {
   })
   const [isDirty, setIsDirty] = useState(false)
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false)
 
   useEffect(() => {
     const hasChanges = JSON.stringify(form) !== JSON.stringify(initialForm)
@@ -142,6 +143,10 @@ export default function ClusterDetailModal({ cluster, onClose }) {
 
   const handleSave = async (e) => {
     e.preventDefault()
+    setShowSaveConfirm(true)
+  }
+
+  const doSave = async () => {
     await updateCluster(cluster.id, { stageData: form })
     onClose()
   }
@@ -233,6 +238,17 @@ export default function ClusterDetailModal({ cluster, onClose }) {
           </div>
         </form>
       </div>
+
+      <ConfirmDialog
+        isOpen={showSaveConfirm}
+        onClose={() => setShowSaveConfirm(false)}
+        onConfirm={doSave}
+        title="Save Data?"
+        message={`Save the updated data for "${cluster.clusterName}"?`}
+        confirmText="Save"
+        cancelText="Go Back"
+        variant="success"
+      />
 
       <ConfirmDialog
         isOpen={showDiscardConfirm}

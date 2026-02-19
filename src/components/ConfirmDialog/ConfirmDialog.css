@@ -84,6 +84,11 @@
   color: #fbbf24;
 }
 
+.confirm-icon--success {
+  background: rgba(45, 90, 45, 0.1);
+  color: var(--primary);
+}
+
 .confirm-title {
   font-size: 22px;
   font-weight: 700;
@@ -143,4 +148,12 @@
 
 .btn-confirm--warning:hover {
   background: #d97706;
+}
+
+.btn-confirm--success {
+  background: var(--primary);
+}
+
+.btn-confirm--success:hover {
+  background: var(--primary-dark);
 }

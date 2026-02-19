@@ -17,6 +17,7 @@ export default function FarmFormModal({ onClose, editData }) {
   )
   const [isDirty, setIsDirty] = useState(false)
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false)
 
   useEffect(() => {
     const initialData = editData || { farmName: '', farmArea: '', elevation: '', plantVariety: '', overallTreeCount: '' }
@@ -33,6 +34,10 @@ export default function FarmFormModal({ onClose, editData }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.farmName || !form.farmArea) return
+    setShowSaveConfirm(true)
+  }
+
+  const doSave = async () => {
     await setFarmInfo(form)
     onClose()
   }
@@ -126,6 +131,17 @@ export default function FarmFormModal({ onClose, editData }) {
           </div>
         </form>
       </div>
+
+      <ConfirmDialog
+        isOpen={showSaveConfirm}
+        onClose={() => setShowSaveConfirm(false)}
+        onConfirm={doSave}
+        title={editData ? 'Update Farm?' : 'Register Farm?'}
+        message={editData ? `Save changes to "${form.farmName}"?` : `Register "${form.farmName}" as your farm?`}
+        confirmText={editData ? 'Update Farm' : 'Register'}
+        cancelText="Go Back"
+        variant="success"
+      />
 
       <ConfirmDialog
         isOpen={showDiscardConfirm}

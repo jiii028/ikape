@@ -20,14 +20,19 @@ export default function Settings() {
   });
   const [saved, setSaved] = useState(false);
   const [logoutConfirm, setLogoutConfirm] = useState(false);
+  const [saveConfirm, setSaveConfirm] = useState(false);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
     setSaved(false);
   };
 
-  const handleSave = async (e) => {
+  const handleSave = (e) => {
     e.preventDefault();
+    setSaveConfirm(true);
+  };
+
+  const doSave = async () => {
     const success = await updateProfile(form);
     if (success) {
       setSaved(true);
@@ -204,6 +209,17 @@ export default function Settings() {
         </div>
       </div>
       
+      <ConfirmDialog
+        isOpen={saveConfirm}
+        onClose={() => setSaveConfirm(false)}
+        onConfirm={doSave}
+        title="Save Profile?"
+        message="Save your updated profile information?"
+        confirmText="Save"
+        cancelText="Go Back"
+        variant="success"
+      />
+
       <ConfirmDialog
         isOpen={logoutConfirm}
         onClose={() => setLogoutConfirm(false)}

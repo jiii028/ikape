@@ -16,6 +16,7 @@ export default function ClusterFormModal({ onClose, editData }) {
   )
   const [isDirty, setIsDirty] = useState(false)
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false)
 
   useEffect(() => {
     // Track if form has been modified
@@ -31,6 +32,10 @@ export default function ClusterFormModal({ onClose, editData }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.clusterName || !form.areaSize || !form.plantCount) return
+    setShowSaveConfirm(true)
+  }
+
+  const doSave = async () => {
     if (editData) {
       await updateCluster(editData.id, form)
     } else {
@@ -113,6 +118,17 @@ export default function ClusterFormModal({ onClose, editData }) {
           </div>
         </form>
       </div>
+
+      <ConfirmDialog
+        isOpen={showSaveConfirm}
+        onClose={() => setShowSaveConfirm(false)}
+        onConfirm={doSave}
+        title={editData ? 'Update Cluster?' : 'Add Cluster?'}
+        message={editData ? `Save changes to "${form.clusterName}"?` : `Add "${form.clusterName}" as a new cluster?`}
+        confirmText={editData ? 'Update' : 'Add Cluster'}
+        cancelText="Go Back"
+        variant="success"
+      />
 
       <ConfirmDialog
         isOpen={showDiscardConfirm}

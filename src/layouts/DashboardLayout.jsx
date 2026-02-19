@@ -107,7 +107,9 @@ export default function DashboardLayout() {
                   {user?.firstName} {user?.lastName}
                 </span>
                 <span className="user-location">
-                  {user?.municipality}, {user?.province}
+                  {user?.municipality && user?.province
+                    ? `${user.municipality}, ${user.province}`
+                    : user?.municipality || user?.province || ''}
                 </span>
               </div>
             </div>

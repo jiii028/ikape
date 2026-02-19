@@ -1,4 +1,4 @@
-import { X, AlertTriangle } from 'lucide-react'
+import { X, AlertTriangle, Save } from 'lucide-react'
 import './ConfirmDialog.css'
 
 export default function ConfirmDialog({ 
@@ -9,7 +9,7 @@ export default function ConfirmDialog({
   message, 
   confirmText = 'Confirm',
   cancelText = 'Cancel',
-  variant = 'danger' // 'danger' or 'warning'
+  variant = 'danger' // 'danger', 'warning', or 'success'
 }) {
   if (!isOpen) return null
 
@@ -17,6 +17,8 @@ export default function ConfirmDialog({
     onConfirm()
     onClose()
   }
+
+  const Icon = variant === 'success' ? Save : AlertTriangle
 
   return (
     <div className="confirm-overlay" onClick={onClose}>
@@ -26,7 +28,7 @@ export default function ConfirmDialog({
         </button>
         
         <div className={`confirm-icon confirm-icon--${variant}`}>
-          <AlertTriangle size={32} />
+          <Icon size={32} />
         </div>
         
         <h3 className="confirm-title">{title}</h3>

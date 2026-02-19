@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Save } from 'lucide-react'
 import { useFarm } from '../../context/FarmContext'
+import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
 import './ClusterDetail.css'
 
 const STAGE_OPTIONS = [
@@ -100,6 +101,7 @@ export default function ClusterDetail() {
   const cluster = getCluster(clusterId)
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false)
   const isHarvestSection = section === 'harvest'
   const isReadyToHarvest = cluster?.plantStage === 'ready-to-harvest'
   const isHarvestLocked = isHarvestSection && !isReadyToHarvest
@@ -152,8 +154,12 @@ export default function ClusterDetail() {
     await updateCluster(cluster.id, updates)
   }
 
-  const handleSave = async (e) => {
+  const handleSave = (e) => {
     e.preventDefault()
+    setShowSaveConfirm(true)
+  }
+
+  const doSave = async () => {
     setSaving(true)
     await updateCluster(cluster.id, {
       stageData: {
@@ -249,6 +255,17 @@ export default function ClusterDetail() {
           </div>
         </form>
       </div>
+
+      <ConfirmDialog
+        isOpen={showSaveConfirm}
+        onClose={() => setShowSaveConfirm(false)}
+        onConfirm={doSave}
+        title="Save Changes?"
+        message={`Save the updated data for "${cluster.clusterName}"?`}
+        confirmText="Save"
+        cancelText="Go Back"
+        variant="success"
+      />
     </div>
   )
 }
