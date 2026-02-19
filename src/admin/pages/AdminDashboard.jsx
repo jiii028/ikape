@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { getCached, setCached } from '../../lib/queryCache'
+import { fetchOverview } from '../../api/analytics'
 import {
     Users,
     Sprout,
