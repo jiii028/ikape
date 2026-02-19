@@ -19,6 +19,7 @@ import {
   ShieldAlert,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   X,
 } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog/ConfirmDialog'
@@ -40,9 +41,11 @@ export default function DashboardLayout() {
   const { clusterId } = useParams()
   const isClusterRoute = location.pathname.startsWith('/clusters/')
   const searchContainerRef = useRef(null)
+  const profileMenuRef = useRef(null)
   const [logoutConfirm, setLogoutConfirm] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_PREF_KEY) === 'true'
@@ -82,14 +85,25 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     const handleOutsideClick = (event) => {
-      if (!searchContainerRef.current) return
-      if (searchContainerRef.current.contains(event.target)) return
-      setIsSearchOpen(false)
+      const clickedInsideSearch = searchContainerRef.current?.contains(event.target)
+      const clickedInsideProfile = profileMenuRef.current?.contains(event.target)
+
+      if (!clickedInsideSearch) {
+        setIsSearchOpen(false)
+      }
+
+      if (!clickedInsideProfile) {
+        setShowProfileMenu(false)
+      }
     }
 
     document.addEventListener('mousedown', handleOutsideClick)
     return () => document.removeEventListener('mousedown', handleOutsideClick)
   }, [])
+
+  useEffect(() => {
+    setShowProfileMenu(false)
+  }, [location.pathname])
 
   const handleLogout = async () => {
     await logout()
@@ -282,23 +296,45 @@ export default function DashboardLayout() {
             <button className="topbar-icon-btn">
               <Bell size={20} />
             </button>
-            <button className="topbar-icon-btn mobile-logout-btn" onClick={() => setLogoutConfirm(true)}>
-              <LogOut size={18} />
-            </button>
-            <div className="user-info">
-              <div className="user-avatar">
-                <User size={18} />
-              </div>
-              <div className="user-details">
-                <span className="user-name">
-                  {user?.firstName} {user?.lastName}
-                </span>
-                <span className="user-location">
-                  {user?.municipality && user?.province
-                    ? `${user.municipality}, ${user.province}`
-                    : user?.municipality || user?.province || ''}
-                </span>
-              </div>
+            <div className="user-menu" ref={profileMenuRef}>
+              <button
+                type="button"
+                className="user-info user-info-trigger"
+                onClick={() => setShowProfileMenu((prev) => !prev)}
+                aria-expanded={showProfileMenu}
+                aria-haspopup="menu"
+              >
+                <div className="user-avatar">
+                  <User size={18} />
+                </div>
+                <div className="user-details">
+                  <span className="user-name">
+                    {user?.firstName} {user?.lastName}
+                  </span>
+                  <span className="user-location">
+                    {user?.municipality && user?.province
+                      ? `${user.municipality}, ${user.province}`
+                      : user?.municipality || user?.province || ''}
+                  </span>
+                </div>
+                <ChevronDown size={14} className={`user-menu-chevron ${showProfileMenu ? 'user-menu-chevron--open' : ''}`} />
+              </button>
+              {showProfileMenu && (
+                <div className="user-dropdown" role="menu">
+                  <button
+                    type="button"
+                    className="user-dropdown-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setShowProfileMenu(false)
+                      setLogoutConfirm(true)
+                    }}
+                  >
+                    <LogOut size={15} />
+                    Log Out
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>

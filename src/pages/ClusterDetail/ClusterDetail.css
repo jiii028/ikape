@@ -45,6 +45,7 @@
   border-radius: var(--radius);
   padding: 20px;
   box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
 .cd-card h2 {
@@ -272,8 +273,17 @@
     padding: 16px;
   }
 
+  .cd-card h2 {
+    font-size: 16px;
+    margin-bottom: 12px;
+  }
+
   .cd-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cd-form-grid--harvest {
+    padding: 12px;
   }
 
   .harvest-form-toolbar {
@@ -304,8 +314,13 @@
     gap: 12px;
   }
 
+  .cd-form-grid--harvest {
+    padding: 10px;
+  }
+
   .cd-actions {
     justify-content: stretch;
+    margin-top: 14px;
   }
 
   .cd-save-btn {
@@ -316,6 +331,19 @@
   .harvest-group-header {
     padding: 10px 12px;
     align-items: flex-start;
+  }
+
+  .harvest-progress-pill {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .harvest-group-title-wrap h3 {
+    font-size: 13px;
+  }
+
+  .harvest-group-title-wrap p {
+    font-size: 11px;
   }
 
   .harvest-group-meta {

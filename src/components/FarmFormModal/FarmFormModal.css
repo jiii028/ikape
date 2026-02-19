@@ -141,3 +141,48 @@
   border-top: 1px solid var(--border-light);
   margin-top: 4px;
 }
+
+@media (max-width: 768px) {
+  .modal-overlay {
+    padding: 12px;
+    align-items: flex-end;
+  }
+
+  .modal,
+  .modal.modal--wide {
+    max-width: 100%;
+    max-height: calc(100vh - 16px);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .modal-header {
+    padding: 16px;
+  }
+
+  .modal-header h3 {
+    font-size: 16px;
+  }
+
+  .modal-form {
+    padding: 16px;
+    gap: 14px;
+  }
+
+  .modal-form .form-row,
+  .modal-form .form-grid-3 {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .modal-actions {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+
+  .modal-actions .btn-primary,
+  .modal-actions .btn-secondary {
+    width: 100%;
+    justify-content: center;
+  }
+}

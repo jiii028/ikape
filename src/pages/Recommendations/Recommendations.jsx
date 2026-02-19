@@ -10,6 +10,7 @@ import {
   TrendingDown,
   TrendingUp,
   Minus,
+  Layers,
   X,
 } from 'lucide-react'
 import './Recommendations.css'
@@ -161,6 +162,7 @@ export default function Recommendations() {
   const [performanceFilter, setPerformanceFilter] = useState('')
   const [seasonFilter, setSeasonFilter] = useState('')
   const [selectedCluster, setSelectedCluster] = useState(null)
+  const [mobilePanel, setMobilePanel] = useState('list')
 
   const allClusters = getAllClusters()
   const clustersWithAnalysis = allClusters.map((c) => ({
@@ -218,7 +220,7 @@ export default function Recommendations() {
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
-            <ChevronDown size={14} />
+            <ChevronDown size={14} className="filter-chevron" />
           </div>
           <div className="filter-select">
             <Filter size={16} />
@@ -228,7 +230,7 @@ export default function Recommendations() {
               <option value="moderate">Moderate</option>
               <option value="good">Good</option>
             </select>
-            <ChevronDown size={14} />
+            <ChevronDown size={14} className="filter-chevron" />
           </div>
         </div>
       </div>
@@ -258,8 +260,28 @@ export default function Recommendations() {
         </div>
       </div>
 
+      <div className="reco-mobile-toggle">
+        <button
+          type="button"
+          className={`reco-mobile-toggle-btn ${mobilePanel === 'list' ? 'active' : ''}`}
+          onClick={() => setMobilePanel('list')}
+        >
+          <Layers size={15} />
+          Cluster List
+        </button>
+        <button
+          type="button"
+          className={`reco-mobile-toggle-btn ${mobilePanel === 'detail' ? 'active' : ''}`}
+          onClick={() => setMobilePanel('detail')}
+          disabled={!selectedCluster}
+        >
+          <Lightbulb size={15} />
+          Cluster Details
+        </button>
+      </div>
+
       {/* Cluster List with Performance */}
-      <div className="reco-content">
+      <div className={`reco-content ${mobilePanel === 'detail' ? 'reco-content--detail' : 'reco-content--list'}`}>
         <div className="reco-list">
           {filtered.length === 0 ? (
             <div className="reco-empty">
@@ -275,7 +297,10 @@ export default function Recommendations() {
                 <div
                   key={cluster.id}
                   className={`reco-item ${selectedCluster?.id === cluster.id ? 'active' : ''}`}
-                  onClick={() => setSelectedCluster(cluster)}
+                  onClick={() => {
+                    setSelectedCluster(cluster)
+                    setMobilePanel('detail')
+                  }}
                 >
                   <div className="reco-item-left">
                     <div
@@ -313,7 +338,13 @@ export default function Recommendations() {
               <h3>
                 <Lightbulb size={18} /> {selectedCluster.clusterName}
               </h3>
-              <button className="modal-close" onClick={() => setSelectedCluster(null)}>
+              <button
+                className="modal-close"
+                onClick={() => {
+                  setSelectedCluster(null)
+                  setMobilePanel('list')
+                }}
+              >
                 <X size={18} />
               </button>
             </div>
