@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { getCached, setCached } from '../../lib/queryCache'
 import {
     Users,
     Sprout,
@@ -26,6 +27,8 @@ import './AdminDashboard.css'
 
 const RISK_COLORS = { Low: '#22c55e', Moderate: '#f59e0b', High: '#f97316', Critical: '#ef4444' }
 const GRADE_COLORS = ['#22c55e', '#3b82f6', '#f59e0b']
+const ADMIN_DASHBOARD_CACHE_KEY = 'admin_dashboard:overview'
+const ADMIN_DASHBOARD_CACHE_TTL_MS = 2 * 60 * 1000
 
 export default function AdminDashboard() {
     const [stats, setStats] = useState({
@@ -57,33 +60,42 @@ export default function AdminDashboard() {
     }, [])
 
     const fetchDashboardData = async () => {
-        setLoading(true)
+        const cached = getCached(ADMIN_DASHBOARD_CACHE_KEY, ADMIN_DASHBOARD_CACHE_TTL_MS)
+        if (cached) {
+            setStats(cached.stats)
+            setCriticalFarms(cached.criticalFarms)
+            setYieldTrend(cached.yieldTrend)
+            setGradeDistribution(cached.gradeDistribution)
+            setAuditLogs(cached.auditLogs)
+            setLoading(false)
+        } else {
+            setLoading(true)
+        }
+
         try {
-            // Fetch total users (farmers)
-            const { data: users, error: usersErr } = await supabase
-                .from('users')
-                .select('id')
-                .eq('role', 'farmer')
+            const [usersRes, farmsRes, clustersRes, harvestsRes] = await Promise.all([
+                supabase.from('users').select('id').eq('role', 'farmer'),
+                supabase.from('farms').select('id, farm_name, farm_area, user_id'),
+                supabase.from('clusters').select('*, cluster_stage_data(*), farms!inner(farm_name, user_id)'),
+                supabase.from('harvest_records').select('*'),
+            ])
 
-            // Fetch farms
-            const { data: farms, error: farmsErr } = await supabase
-                .from('farms')
-                .select('id, farm_name, farm_area, user_id')
+            if (usersRes.error || farmsRes.error || clustersRes.error || harvestsRes.error) {
+                throw usersRes.error || farmsRes.error || clustersRes.error || harvestsRes.error
+            }
 
-            // Fetch clusters with stage data
-            const { data: clusters, error: clustersErr } = await supabase
-                .from('clusters')
-                .select('*, cluster_stage_data(*), farms!inner(farm_name, user_id)')
-
-            // Fetch harvest records
-            const { data: harvests, error: harvestsErr } = await supabase
-                .from('harvest_records')
-                .select('*')
+            const users = usersRes.data || []
+            const farms = farmsRes.data || []
+            const clusters = (clustersRes.data || []).map((c) => ({
+                ...c,
+                stageData: Array.isArray(c.cluster_stage_data) ? c.cluster_stage_data[0] : c.cluster_stage_data,
+            }))
+            const harvests = harvestsRes.data || []
 
             // Compute stats
-            const totalFarmers = users?.length || 0
-            const totalFarms = farms?.length || 0
-            const totalClusters = clusters?.length || 0
+            const totalFarmers = users.length
+            const totalFarms = farms.length
+            const totalClusters = clusters.length
 
             // Compute yields from cluster_stage_data
             let predictedYield = 0
@@ -91,8 +103,8 @@ export default function AdminDashboard() {
             let previousYield = 0
             let gradeFine = 0, gradePremium = 0, gradeCommercial = 0
 
-            clusters?.forEach((c) => {
-                const sd = c.cluster_stage_data
+            clusters.forEach((c) => {
+                const sd = c.stageData
                 if (sd) {
                     predictedYield += parseFloat(sd.predicted_yield || 0)
                     actualYield += parseFloat(sd.current_yield || 0)
@@ -103,18 +115,19 @@ export default function AdminDashboard() {
                 }
             })
 
-            setStats({
+            const nextStats = {
                 totalFarmers,
                 totalFarms,
                 totalClusters,
                 predictedYield: Math.round(predictedYield),
                 actualYield: Math.round(actualYield),
                 previousYield: Math.round(previousYield),
-            })
+            }
+            setStats(nextStats)
 
             // Grade distribution for donut chart
             const totalGrade = gradeFine + gradePremium + gradeCommercial
-            setGradeDistribution(totalGrade > 0 ? [
+            const nextGradeDistribution = totalGrade > 0 ? [
                 { name: 'Fine', value: Math.round(gradeFine), pct: ((gradeFine / totalGrade) * 100).toFixed(1) },
                 { name: 'Premium', value: Math.round(gradePremium), pct: ((gradePremium / totalGrade) * 100).toFixed(1) },
                 { name: 'Commercial', value: Math.round(gradeCommercial), pct: ((gradeCommercial / totalGrade) * 100).toFixed(1) },
@@ -122,11 +135,12 @@ export default function AdminDashboard() {
                 { name: 'Fine', value: 33, pct: '33.3' },
                 { name: 'Premium', value: 34, pct: '33.3' },
                 { name: 'Commercial', value: 33, pct: '33.3' },
-            ])
+            ]
+            setGradeDistribution(nextGradeDistribution)
 
             // Yield trend (from harvest records, grouped by season)
             const seasonMap = {}
-            harvests?.forEach((h) => {
+            harvests.forEach((h) => {
                 const season = h.season || 'Unknown'
                 if (!seasonMap[season]) seasonMap[season] = { predicted: 0, actual: 0 }
                 seasonMap[season].actual += parseFloat(h.yield_kg || 0)
@@ -136,15 +150,16 @@ export default function AdminDashboard() {
                 predicted: Math.round(vals.predicted),
                 actual: Math.round(vals.actual),
             }))
-            setYieldTrend(trendData.length > 0 ? trendData : [
+            const nextYieldTrend = trendData.length > 0 ? trendData : [
                 { season: '2024 Dry', predicted: 0, actual: 0 },
                 { season: '2024 Wet', predicted: 0, actual: 0 },
                 { season: '2025 Dry', predicted: 0, actual: 0 },
-            ])
+            ]
+            setYieldTrend(nextYieldTrend)
 
             // Critical farms: clusters with potential issues
-            const critical = clusters?.map((c) => {
-                const sd = c.cluster_stage_data
+            const nextCriticalFarms = clusters.map((c) => {
+                const sd = c.stageData
                 if (!sd) return null
                 const predicted = parseFloat(sd.predicted_yield || 0)
                 const actual = parseFloat(sd.current_yield || 0)
@@ -171,14 +186,23 @@ export default function AdminDashboard() {
                     plantStage: c.plant_stage,
                     defectCount: sd.defect_count || 0,
                 }
-            }).filter(Boolean).filter(c => c.riskLevel !== 'Low') || []
+            }).filter(Boolean).filter(c => c.riskLevel !== 'Low')
 
-            setCriticalFarms(critical)
+            setCriticalFarms(nextCriticalFarms)
 
             // Add initial audit log entries
-            setAuditLogs([
+            const nextAuditLogs = [
                 { time: new Date().toLocaleString(), action: 'Dashboard loaded', user: 'Sir Ernesto' },
-            ])
+            ]
+            setAuditLogs(nextAuditLogs)
+
+            setCached(ADMIN_DASHBOARD_CACHE_KEY, {
+                stats: nextStats,
+                criticalFarms: nextCriticalFarms,
+                yieldTrend: nextYieldTrend,
+                gradeDistribution: nextGradeDistribution,
+                auditLogs: nextAuditLogs,
+            })
         } catch (err) {
             console.error('Error fetching dashboard data:', err)
         }

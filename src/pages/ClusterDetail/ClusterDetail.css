@@ -53,7 +53,7 @@
 }
 
 .cd-lock-note {
-  margin-bottom: 12px;
+  margin-bottom: 4px;
   padding: 10px 12px;
   border-radius: var(--radius-sm);
   background: #fff7ed;
@@ -62,10 +62,138 @@
   border: 1px solid #fed7aa;
 }
 
+.cd-lock-panel {
+  margin-bottom: 12px;
+}
+
+.cd-lock-note-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .cd-form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 14px;
+}
+
+.cd-form-grid--harvest {
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--border-light);
+}
+
+.harvest-form-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.harvest-progress-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #f6faf6;
+}
+
+.harvest-progress-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.harvest-progress-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.harvest-toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.harvest-toolbar-btn {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  transition: var(--transition);
+}
+
+.harvest-toolbar-btn:hover {
+  border-color: var(--primary-light);
+  color: var(--primary);
+}
+
+.harvest-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.harvest-group {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: #fbfdfb;
+  overflow: hidden;
+}
+
+.harvest-group--open {
+  border-color: #d4e8d4;
+  box-shadow: 0 4px 14px rgba(26, 46, 26, 0.06);
+}
+
+.harvest-group-header {
+  width: 100%;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: transparent;
+  text-align: left;
+}
+
+.harvest-group-title-wrap h3 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.harvest-group-title-wrap p {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.harvest-group-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.harvest-group-count {
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 700;
+  background: #eef8ee;
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+
+.harvest-group-chevron {
+  color: var(--text-secondary);
+  transition: transform 0.2s ease;
+}
+
+.harvest-group-chevron--open {
+  transform: rotate(180deg);
 }
 
 .cd-form .form-group label {
@@ -134,5 +262,18 @@
   .cd-stage select {
     width: 100%;
     min-width: 0;
+  }
+
+  .harvest-form-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .harvest-toolbar-actions {
+    width: 100%;
+  }
+
+  .harvest-toolbar-btn {
+    flex: 1;
   }
 }

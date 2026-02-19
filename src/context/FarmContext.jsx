@@ -1,81 +1,86 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './AuthContext'
+import { getCached, setCached, clearCachedByPrefix } from '../lib/queryCache'
 
 const FarmContext = createContext(null)
+const FARM_CACHE_TTL_MS = 5 * 60 * 1000
+
+function farmCacheKey(userId) {
+  return `farm_context:${userId}`
+}
 
 export function FarmProvider({ children }) {
-  const { user, authUser } = useAuth()
+  const { authUser } = useAuth()
   const [farm, setFarm] = useState(null)
   const [clusters, setClusters] = useState([])
   const [loading, setLoading] = useState(false)
+  const currentCacheKey = authUser?.id ? farmCacheKey(authUser.id) : null
 
-  // ── Fetch farm + clusters when user logs in ──────────────────
+  const persistFarmSnapshot = useCallback(
+    (nextFarm, nextClusters) => {
+      if (!currentCacheKey) return
+      setCached(currentCacheKey, {
+        farm: nextFarm || null,
+        clusters: Array.isArray(nextClusters) ? nextClusters : [],
+      })
+    },
+    [currentCacheKey]
+  )
+
   const fetchFarmData = useCallback(async () => {
     if (!authUser) {
+      clearCachedByPrefix('farm_context:')
       setFarm(null)
       setClusters([])
       setLoading(false)
       return
     }
-    
-    try {
-      setLoading(true)
 
-      // Get user's farm — use maybeSingle() so no error if row doesn't exist yet
+    const cacheKey = farmCacheKey(authUser.id)
+    const cachedSnapshot = getCached(cacheKey, FARM_CACHE_TTL_MS)
+    if (cachedSnapshot?.farm) {
+      setFarm(cachedSnapshot.farm)
+      setClusters(Array.isArray(cachedSnapshot.clusters) ? cachedSnapshot.clusters : [])
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
+
+    try {
+      // Pre-aggregate related data in one request for faster page hydration.
       const { data: farmRow, error: farmErr } = await supabase
         .from('farms')
-        .select('*')
+        .select('*, clusters(*, cluster_stage_data(*))')
         .eq('user_id', authUser.id)
         .maybeSingle()
 
       if (farmErr) {
         console.error('Error fetching farm:', farmErr.message)
-        setLoading(false)
         return
       }
 
       if (farmRow) {
-        setFarm(farmRow)
+        const { clusters: clusterRows = [], ...farmOnly } = farmRow
+        const normalizedClusters = [...(clusterRows || [])]
+          .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+          .map(mapClusterFromDb)
 
-        // Get clusters for this farm
-        const { data: clusterRows, error: clusterErr } = await supabase
-          .from('clusters')
-          .select('*, cluster_stage_data(*)')
-          .eq('farm_id', farmRow.id)
-          .order('created_at', { ascending: true })
-
-        if (clusterErr) {
-          console.error('Error fetching clusters:', clusterErr.message)
-          setClusters([])
-        } else {
-          setClusters(
-            (clusterRows || []).map((c) => ({
-              id: c.id,
-              clusterName: c.cluster_name,
-              areaSize: c.area_size,
-              plantCount: c.plant_count,
-              plantStage: c.plant_stage,
-              createdAt: c.created_at,
-              stageData: c.cluster_stage_data?.[0]
-                ? mapStageDataFromDb(c.cluster_stage_data[0])
-                : null,
-              harvestRecords: [], // loaded on demand
-            }))
-          )
-        }
+        setFarm(farmOnly)
+        setClusters(normalizedClusters)
+        persistFarmSnapshot(farmOnly, normalizedClusters)
       } else {
-        // Auto-create a farm row for the user so clusters can be added
         const { data: newFarm, error: createErr } = await supabase
           .from('farms')
           .insert({ user_id: authUser.id, farm_name: 'My Farm' })
           .select()
           .single()
-        
+
         if (createErr) {
           console.error('Error creating farm:', createErr.message)
         } else {
           setFarm(newFarm)
+          persistFarmSnapshot(newFarm, [])
         }
         setClusters([])
       }
@@ -84,13 +89,12 @@ export function FarmProvider({ children }) {
     } finally {
       setLoading(false)
     }
-  }, [authUser])
+  }, [authUser, persistFarmSnapshot])
 
   useEffect(() => {
     fetchFarmData()
   }, [fetchFarmData])
 
-  // ── Farm info update ──────────────────────────────────────────
   const setFarmInfo = async (farmData) => {
     if (!farm) return
     const { data } = await supabase
@@ -105,10 +109,12 @@ export function FarmProvider({ children }) {
       .eq('id', farm.id)
       .select()
       .single()
-    if (data) setFarm(data)
+    if (data) {
+      setFarm(data)
+      persistFarmSnapshot(data, clusters)
+    }
   }
 
-  // ── Add cluster ───────────────────────────────────────────────
   const addCluster = async (cluster) => {
     if (!farm) return null
     const { data, error } = await supabase
@@ -138,13 +144,17 @@ export function FarmProvider({ children }) {
       stageData: null,
       harvestRecords: [],
     }
-    setClusters((prev) => [...prev, newCluster])
+
+    setClusters((prev) => {
+      const next = [...prev, newCluster]
+      persistFarmSnapshot(farm, next)
+      return next
+    })
+
     return newCluster
   }
 
-  // ── Update cluster (basic fields + stage data) ────────────────
   const updateCluster = async (clusterId, updates) => {
-    // Update basic cluster fields if present
     const basicFields = {}
     if (updates.clusterName !== undefined) basicFields.cluster_name = updates.clusterName
     if (updates.areaSize !== undefined) basicFields.area_size = updates.areaSize
@@ -155,7 +165,6 @@ export function FarmProvider({ children }) {
       await supabase.from('clusters').update(basicFields).eq('id', clusterId)
     }
 
-    // Upsert stage data if present
     if (updates.stageData) {
       const dbStageData = mapStageDataToDb(updates.stageData)
       dbStageData.cluster_id = clusterId
@@ -165,9 +174,8 @@ export function FarmProvider({ children }) {
         .upsert(dbStageData, { onConflict: 'cluster_id' })
     }
 
-    // Update local state
-    setClusters((prev) =>
-      prev.map((c) =>
+    setClusters((prev) => {
+      const next = prev.map((c) =>
         c.id === clusterId
           ? {
               ...c,
@@ -179,16 +187,20 @@ export function FarmProvider({ children }) {
             }
           : c
       )
-    )
+      persistFarmSnapshot(farm, next)
+      return next
+    })
   }
 
-  // ── Delete cluster ────────────────────────────────────────────
   const deleteCluster = async (clusterId) => {
     await supabase.from('clusters').delete().eq('id', clusterId)
-    setClusters((prev) => prev.filter((c) => c.id !== clusterId))
+    setClusters((prev) => {
+      const next = prev.filter((c) => c.id !== clusterId)
+      persistFarmSnapshot(farm, next)
+      return next
+    })
   }
 
-  // ── Add harvest record ────────────────────────────────────────
   const addHarvestRecord = async (clusterId, record) => {
     const { data, error } = await supabase
       .from('harvest_records')
@@ -209,16 +221,17 @@ export function FarmProvider({ children }) {
       return
     }
 
-    setClusters((prev) =>
-      prev.map((c) =>
+    setClusters((prev) => {
+      const next = prev.map((c) =>
         c.id === clusterId
           ? { ...c, harvestRecords: [...(c.harvestRecords || []), data] }
           : c
       )
-    )
+      persistFarmSnapshot(farm, next)
+      return next
+    })
   }
 
-  // ── Helpers ───────────────────────────────────────────────────
   const getCluster = (clusterId) => clusters.find((c) => c.id === clusterId)
 
   const getAllClusters = () => {
@@ -259,7 +272,20 @@ export function useFarm() {
   return context
 }
 
-// ── DB ↔ JS field mapping helpers ─────────────────────────────
+function mapClusterFromDb(row) {
+  return {
+    id: row.id,
+    clusterName: row.cluster_name,
+    areaSize: row.area_size,
+    plantCount: row.plant_count,
+    plantStage: row.plant_stage,
+    createdAt: row.created_at,
+    stageData: row.cluster_stage_data?.[0]
+      ? mapStageDataFromDb(row.cluster_stage_data[0])
+      : null,
+    harvestRecords: [],
+  }
+}
 
 function mapStageDataFromDb(row) {
   return {
