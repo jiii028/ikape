@@ -29,6 +29,9 @@ export default function LoadingScreen({ message = 'Preparing your dashboard...' 
                 </div>
 
                 <div className="loading-brand">
+                    <div className="loading-logo-badge">
+                        <img src="/logo.png" alt="IKAPE logo" className="loading-logo-image" />
+                    </div>
                     <h1>IKAPE</h1>
                     <p>Coffee Farm Management System</p>
                 </div>

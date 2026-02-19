@@ -8,7 +8,6 @@ import {
   Lightbulb,
   Settings,
   LogOut,
-  Sprout,
   Search,
   Bell,
   User,
@@ -194,7 +193,9 @@ export default function DashboardLayout() {
     <div className="layout">
       <aside className={`sidebar ${isSidebarCollapsed ? 'sidebar--collapsed' : ''}`}>
         <div className="sidebar-header">
-          <Sprout size={28} className="sidebar-logo-icon" />
+          <div className="sidebar-logo-badge">
+            <img src="/logo.png" alt="IKAPE logo" className="sidebar-logo-image" />
+          </div>
           <span className="sidebar-title">IKAPE</span>
           <button
             type="button"

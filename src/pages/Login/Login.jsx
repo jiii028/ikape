@@ -81,7 +81,9 @@ export default function Login() {
     <div className="auth-page">
       <div className="auth-left">
         <div className="auth-brand">
-          <Sprout size={48} />
+          <div className="auth-logo-badge">
+            <img src="/logo.png" alt="IKAPE logo" className="auth-logo-image" />
+          </div>
           <h1>IKAPE</h1>
           <p>Coffee Farm Management System</p>
         </div>

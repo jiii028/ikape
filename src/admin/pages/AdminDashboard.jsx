@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { getCached, setCached } from '../../lib/queryCache'
 import { fetchOverview } from '../../api/analytics'
@@ -64,6 +65,7 @@ const INTERVENTION_BY_RISK = {
 }
 
 export default function AdminDashboard() {
+    const [searchParams] = useSearchParams()
     const [stats, setStats] = useState({
         totalFarmers: 0,
         totalFarms: 0,
@@ -353,6 +355,24 @@ export default function AdminDashboard() {
         : 0
     const isOverProduction = yieldDiff >= 0
     const selectedInterventions = selectedCluster ? INTERVENTION_BY_RISK[selectedCluster.riskLevel] : null
+    const dashboardQuery = (searchParams.get('q') || '').trim().toLowerCase()
+    const clusterQueryId = (searchParams.get('cluster') || '').trim()
+
+    useEffect(() => {
+        if (!clusterQueryId || criticalFarms.length === 0) return
+        const match = criticalFarms.find((farm) => String(farm.id) === clusterQueryId)
+        if (match) {
+            setSelectedCluster(match)
+        }
+    }, [clusterQueryId, criticalFarms])
+
+    const visibleCriticalFarms = dashboardQuery
+        ? sortedCriticalFarms.filter((farm) =>
+            (farm.farmName || '').toLowerCase().includes(dashboardQuery) ||
+            (farm.clusterName || '').toLowerCase().includes(dashboardQuery) ||
+            (farm.plantStage || '').toLowerCase().includes(dashboardQuery)
+        )
+        : sortedCriticalFarms
 
     if (loading) {
         return (
@@ -491,7 +511,7 @@ export default function AdminDashboard() {
                 <div className="admin-critical-header">
                     <div>
                         <h3><AlertTriangle size={18} /> Farms Requiring Immediate Attention</h3>
-                        <p>{sortedCriticalFarms.length} cluster(s) flagged</p>
+                        <p>{visibleCriticalFarms.length} cluster(s) flagged</p>
                     </div>
                     {selectedRows.length > 0 && (
                         <div className="admin-bulk-actions">
@@ -509,72 +529,114 @@ export default function AdminDashboard() {
                     )}
                 </div>
 
-                {sortedCriticalFarms.length > 0 ? (
-                    <div className="admin-table-wrapper">
-                        <table className="admin-table">
-                            <thead>
-                                <tr>
-                                    <th>
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedRows.length === sortedCriticalFarms.length && sortedCriticalFarms.length > 0}
-                                            onChange={() => {
-                                                if (selectedRows.length === sortedCriticalFarms.length) {
-                                                    setSelectedRows([])
-                                                } else {
-                                                    setSelectedRows(sortedCriticalFarms.map(c => c.id))
-                                                }
-                                            }}
-                                        />
-                                    </th>
-                                    <th onClick={() => handleSort('farmName')} className="sortable">Farm Name</th>
-                                    <th onClick={() => handleSort('clusterName')} className="sortable">Cluster</th>
-                                    <th onClick={() => handleSort('riskLevel')} className="sortable">Risk Level</th>
-                                    <th onClick={() => handleSort('yieldDecline')} className="sortable">Yield Decline</th>
-                                    <th onClick={() => handleSort('priorityScore')} className="sortable">Priority</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {sortedCriticalFarms.map((farm) => (
-                                    <tr key={farm.id}>
-                                        <td>
+                {visibleCriticalFarms.length > 0 ? (
+                    <div className="admin-critical-data">
+                        <div className="admin-table-wrapper admin-table-wrapper--desktop">
+                            <table className="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedRows.length === visibleCriticalFarms.length && visibleCriticalFarms.length > 0}
+                                                onChange={() => {
+                                                    if (selectedRows.length === visibleCriticalFarms.length) {
+                                                        setSelectedRows([])
+                                                    } else {
+                                                        setSelectedRows(visibleCriticalFarms.map(c => c.id))
+                                                    }
+                                                }}
+                                            />
+                                        </th>
+                                        <th onClick={() => handleSort('farmName')} className="sortable">Farm Name</th>
+                                        <th onClick={() => handleSort('clusterName')} className="sortable">Cluster</th>
+                                        <th onClick={() => handleSort('riskLevel')} className="sortable">Risk Level</th>
+                                        <th onClick={() => handleSort('yieldDecline')} className="sortable">Yield Decline</th>
+                                        <th onClick={() => handleSort('priorityScore')} className="sortable">Priority</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {visibleCriticalFarms.map((farm) => (
+                                        <tr key={farm.id}>
+                                            <td>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedRows.includes(farm.id)}
+                                                    onChange={() => toggleRowSelect(farm.id)}
+                                                />
+                                            </td>
+                                            <td className="farm-name-cell">{farm.farmName}</td>
+                                            <td>{farm.clusterName}</td>
+                                            <td>
+                                                <span className="risk-badge" style={{ background: RISK_COLORS[farm.riskLevel] + '20', color: RISK_COLORS[farm.riskLevel] }}>
+                                                    {farm.riskLevel}
+                                                </span>
+                                            </td>
+                                            <td className="decline-cell">
+                                                <ArrowDownRight size={14} /> {farm.yieldDecline}%
+                                            </td>
+                                            <td>
+                                                <span className={`priority-badge priority-${farm.priorityScore}`}>
+                                                    P{farm.priorityScore}
+                                                </span>
+                                            </td>
+                                            <td className="action-cell">
+                                                <button className="admin-action-btn" onClick={() => { setSelectedCluster(farm); addAuditLog(`Viewed cluster: ${farm.clusterName}`) }}>
+                                                    <Eye size={14} /> View
+                                                </button>
+                                                <button className="admin-action-btn admin-action-btn--warn" onClick={() => handleAssign(farm)}>
+                                                    <ClipboardList size={14} /> Assign
+                                                </button>
+                                                <button className="admin-action-btn admin-action-btn--info" onClick={() => handleNotify(farm)}>
+                                                    <Bell size={14} /> Notify
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="admin-critical-mobile-list">
+                            {visibleCriticalFarms.map((farm) => (
+                                <article className="admin-critical-mobile-card" key={`mobile-${farm.id}`}>
+                                    <div className="admin-critical-mobile-head">
+                                        <label className="admin-critical-checkbox">
                                             <input
                                                 type="checkbox"
                                                 checked={selectedRows.includes(farm.id)}
                                                 onChange={() => toggleRowSelect(farm.id)}
                                             />
-                                        </td>
-                                        <td className="farm-name-cell">{farm.farmName}</td>
-                                        <td>{farm.clusterName}</td>
-                                        <td>
-                                            <span className="risk-badge" style={{ background: RISK_COLORS[farm.riskLevel] + '20', color: RISK_COLORS[farm.riskLevel] }}>
-                                                {farm.riskLevel}
-                                            </span>
-                                        </td>
-                                        <td className="decline-cell">
+                                            <span>{farm.farmName}</span>
+                                        </label>
+                                        <span className={`priority-badge priority-${farm.priorityScore}`}>
+                                            P{farm.priorityScore}
+                                        </span>
+                                    </div>
+                                    <div className="admin-critical-mobile-meta">
+                                        <span>{farm.clusterName}</span>
+                                        <span className="risk-badge" style={{ background: RISK_COLORS[farm.riskLevel] + '20', color: RISK_COLORS[farm.riskLevel] }}>
+                                            {farm.riskLevel}
+                                        </span>
+                                        <span className="decline-cell">
                                             <ArrowDownRight size={14} /> {farm.yieldDecline}%
-                                        </td>
-                                        <td>
-                                            <span className={`priority-badge priority-${farm.priorityScore}`}>
-                                                P{farm.priorityScore}
-                                            </span>
-                                        </td>
-                                        <td className="action-cell">
-                                            <button className="admin-action-btn" onClick={() => { setSelectedCluster(farm); addAuditLog(`Viewed cluster: ${farm.clusterName}`) }}>
-                                                <Eye size={14} /> View
-                                            </button>
-                                            <button className="admin-action-btn admin-action-btn--warn" onClick={() => handleAssign(farm)}>
-                                                <ClipboardList size={14} /> Assign
-                                            </button>
-                                            <button className="admin-action-btn admin-action-btn--info" onClick={() => handleNotify(farm)}>
-                                                <Bell size={14} /> Notify
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                        </span>
+                                    </div>
+                                    <div className="admin-critical-mobile-actions">
+                                        <button className="admin-action-btn" onClick={() => { setSelectedCluster(farm); addAuditLog(`Viewed cluster: ${farm.clusterName}`) }}>
+                                            <Eye size={14} /> View
+                                        </button>
+                                        <button className="admin-action-btn admin-action-btn--warn" onClick={() => handleAssign(farm)}>
+                                            <ClipboardList size={14} /> Assign
+                                        </button>
+                                        <button className="admin-action-btn admin-action-btn--info" onClick={() => handleNotify(farm)}>
+                                            <Bell size={14} /> Notify
+                                        </button>
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
                     </div>
                 ) : (
                     <div className="admin-empty-state">

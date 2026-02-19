@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { getCached, setCached } from '../../lib/queryCache'
 import {
@@ -21,9 +22,10 @@ const REGISTERED_FARMERS_CACHE_KEY = 'admin_farmers:list'
 const REGISTERED_FARMERS_CACHE_TTL_MS = 2 * 60 * 1000
 
 export default function RegisteredFarmers() {
+    const [searchParams] = useSearchParams()
     const [farmers, setFarmers] = useState([])
     const [loading, setLoading] = useState(true)
-    const [searchQuery, setSearchQuery] = useState('')
+    const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '')
     const [currentPage, setCurrentPage] = useState(1)
     const [showModal, setShowModal] = useState(false)
     const [editFarmer, setEditFarmer] = useState(null)
@@ -49,6 +51,12 @@ export default function RegisteredFarmers() {
         window.addEventListener('focus', handleFocus)
         return () => window.removeEventListener('focus', handleFocus)
     }, [])
+
+    useEffect(() => {
+        const incomingQuery = searchParams.get('q') || ''
+        setSearchQuery(incomingQuery)
+        setCurrentPage(1)
+    }, [searchParams])
 
     const fetchFarmers = async (useCache = true) => {
         if (useCache) {
@@ -305,7 +313,7 @@ export default function RegisteredFarmers() {
                 </div>
             </div>
 
-            <div className="farmers-table-wrapper">
+            <div className="farmers-table-wrapper farmers-table-wrapper--desktop">
                 <table className="farmers-table">
                     <thead>
                         <tr>
@@ -373,6 +381,53 @@ export default function RegisteredFarmers() {
                         )}
                     </tbody>
                 </table>
+            </div>
+
+            <div className="farmers-mobile-list">
+                {paginatedFarmers.length > 0 ? (
+                    paginatedFarmers.map((f) => (
+                        <article key={`mobile-${f.id}`} className="farmers-mobile-card">
+                            <div className="farmers-mobile-card-head">
+                                <div className="farmer-name-cell">
+                                    <div className="farmer-avatar-sm">
+                                        <User size={14} />
+                                    </div>
+                                    {f.first_name} {f.last_name}
+                                </div>
+                                <span
+                                    className="status-badge"
+                                    style={{
+                                        background: (statusColors[f.status] || '#94a3b8') + '18',
+                                        color: statusColors[f.status] || '#94a3b8',
+                                    }}
+                                >
+                                    {f.status}
+                                </span>
+                            </div>
+                            <div className="farmers-mobile-grid">
+                                <div><span>Age:</span> {f.age || 'N/A'}</div>
+                                <div><span>Farm:</span> {f.farmName || 'No Farm'}</div>
+                                <div><span>Area:</span> {f.farmArea || 0} ha</div>
+                                <div><span>Clusters:</span> {f.clusterCount || 0}</div>
+                                <div><span>Location:</span> {[f.municipality, f.province].filter(Boolean).join(', ') || 'N/A'}</div>
+                                <div><span>Registered:</span> {formatDate(f.created_at)}</div>
+                            </div>
+                            <div className="farmers-mobile-actions">
+                                <button className="farmer-action-btn" onClick={() => openEditModal(f)}>
+                                    <Edit2 size={14} />
+                                </button>
+                                <button
+                                    className="farmer-action-btn farmer-action-btn--delete"
+                                    onClick={() => setDeleteConfirm(f)}
+                                >
+                                    <Trash2 size={14} />
+                                </button>
+                            </div>
+                        </article>
+                    ))
+                ) : (
+                    <div className="farmers-empty">No farmers found.</div>
+                )}
             </div>
 
             {/* Pagination */}

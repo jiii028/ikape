@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { getCached, setCached } from '../../lib/queryCache'
 import {
@@ -19,6 +20,7 @@ const PREDICTION_CACHE_KEY = 'admin_prediction:overview'
 const PREDICTION_CACHE_TTL_MS = 2 * 60 * 1000
 
 export default function Prediction() {
+    const [searchParams] = useSearchParams()
     const [viewMode, setViewMode] = useState('overall') // 'overall' or 'farm'
     const [overallData, setOverallData] = useState([])
     const [farmData, setFarmData] = useState([])
@@ -28,6 +30,13 @@ export default function Prediction() {
     useEffect(() => {
         fetchPredictionData()
     }, [])
+
+    useEffect(() => {
+        const requestedView = searchParams.get('view')
+        if (requestedView === 'farm' || requestedView === 'overall') {
+            setViewMode(requestedView)
+        }
+    }, [searchParams])
 
     const fetchPredictionData = async () => {
         const cached = getCached(PREDICTION_CACHE_KEY, PREDICTION_CACHE_TTL_MS)
@@ -149,6 +158,33 @@ export default function Prediction() {
         setLoading(false)
     }
 
+    const farmQuery = (searchParams.get('q') || '').trim().toLowerCase()
+    const filteredFarmData = useMemo(() => {
+        if (!farmQuery) return farmData
+        return farmData.filter((farm) =>
+            (farm.farmName || '').toLowerCase().includes(farmQuery) ||
+            (farm.farmerName || '').toLowerCase().includes(farmQuery)
+        )
+    }, [farmData, farmQuery])
+
+    useEffect(() => {
+        const targetFarmName = (searchParams.get('q') || '').trim().toLowerCase()
+        const targetFarmId = (searchParams.get('farm') || '').trim()
+
+        if (!targetFarmName && !targetFarmId) return
+
+        const match = farmData.find((farm) => {
+            if (targetFarmId && String(farm.id) === targetFarmId) return true
+            if (targetFarmName) return (farm.farmName || '').toLowerCase() === targetFarmName
+            return false
+        })
+
+        if (match) {
+            setViewMode('farm')
+            setExpandedFarm(match.id)
+        }
+    }, [farmData, searchParams])
+
     const handleExportCSV = () => {
         let csv = ''
         if (viewMode === 'overall') {
@@ -250,7 +286,7 @@ export default function Prediction() {
             ) : (
                 /* ===== PER-FARM VIEW ===== */
                 <div className="prediction-farm-view">
-                    {farmData.length > 0 ? farmData.map((farm) => (
+                    {filteredFarmData.length > 0 ? filteredFarmData.map((farm) => (
                         <div key={farm.id} className="prediction-farm-card">
                             <div
                                 className="prediction-farm-header"
@@ -295,11 +331,14 @@ export default function Prediction() {
                                         <tbody>
                                             {farm.clusters.map((cluster, i) => {
                                                 const diff = cluster.actual - cluster.predicted
+                                                const stageClass = String(cluster.stage || '')
+                                                    .toLowerCase()
+                                                    .replace(/[^a-z0-9]+/g, '-')
                                                 return (
                                                     <tr key={i}>
                                                         <td className="cluster-name-bold">{cluster.name}</td>
                                                         <td>
-                                                            <span className={`stage-tag stage-${cluster.stage}`}>{cluster.stage}</span>
+                                                            <span className={`stage-tag stage-${stageClass}`}>{cluster.stage}</span>
                                                         </td>
                                                         <td>{cluster.predicted.toLocaleString()}</td>
                                                         <td>{cluster.actual.toLocaleString()}</td>
@@ -312,13 +351,38 @@ export default function Prediction() {
                                             })}
                                         </tbody>
                                     </table>
+
+                                    <div className="prediction-cluster-mobile-list">
+                                        {farm.clusters.map((cluster, i) => {
+                                            const diff = cluster.actual - cluster.predicted
+                                            const stageClass = String(cluster.stage || '')
+                                                .toLowerCase()
+                                                .replace(/[^a-z0-9]+/g, '-')
+                                            return (
+                                                <article className="prediction-cluster-mobile-card" key={`mobile-${i}`}>
+                                                    <div className="prediction-cluster-mobile-head">
+                                                        <span className="cluster-name-bold">{cluster.name}</span>
+                                                        <span className={`stage-tag stage-${stageClass}`}>{cluster.stage}</span>
+                                                    </div>
+                                                    <div className="prediction-cluster-mobile-grid">
+                                                        <div><span>Predicted:</span> {cluster.predicted.toLocaleString()} kg</div>
+                                                        <div><span>Actual:</span> {cluster.actual.toLocaleString()} kg</div>
+                                                        <div><span>Previous:</span> {cluster.previous.toLocaleString()} kg</div>
+                                                        <div className={diff >= 0 ? 'text-green' : 'text-red'}>
+                                                            <span>Difference:</span> {diff >= 0 ? '+' : ''}{diff.toLocaleString()} kg
+                                                        </div>
+                                                    </div>
+                                                </article>
+                                            )
+                                        })}
+                                    </div>
                                 </div>
                             )}
                         </div>
                     )) : (
                         <div className="admin-empty-state">
                             <TrendingUp size={40} />
-                            <p>No farm data available for prediction analysis.</p>
+                            <p>{farmQuery ? 'No farms match this search.' : 'No farm data available for prediction analysis.'}</p>
                         </div>
                     )}
                 </div>

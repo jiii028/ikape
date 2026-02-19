@@ -5,6 +5,10 @@
     gap: 20px;
 }
 
+.farmers-mobile-list {
+    display: none;
+}
+
 .farmers-header {
     display: flex;
     align-items: center;
@@ -370,6 +374,10 @@
 }
 
 @media (max-width: 768px) {
+    .farmers-page {
+        gap: 14px;
+    }
+
     .farmers-header {
         flex-direction: column;
         align-items: flex-start;
@@ -384,7 +392,91 @@
         width: 100%;
     }
 
+    .farmers-add-btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .farmers-table-wrapper--desktop {
+        display: none;
+    }
+
+    .farmers-mobile-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .farmers-mobile-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .farmers-mobile-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+    }
+
+    .farmers-mobile-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 6px;
+        font-size: 12px;
+        color: #475569;
+    }
+
+    .farmers-mobile-grid span {
+        font-weight: 600;
+        color: #1e293b;
+    }
+
+    .farmers-mobile-actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    .farmers-mobile-actions .farmer-action-btn {
+        width: 36px;
+        height: 36px;
+    }
+
+    .farmers-pagination {
+        width: 100%;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .farmers-pagination button {
+        flex: 1;
+        justify-content: center;
+        padding: 8px 10px;
+        font-size: 12px;
+    }
+
+    .farmer-form {
+        padding: 14px;
+    }
+
     .farmer-form-grid {
         grid-template-columns: 1fr;
+        gap: 10px;
+        margin-bottom: 16px;
+    }
+
+    .farmer-form-actions {
+        flex-direction: column-reverse;
+    }
+
+    .farmer-cancel-btn,
+    .farmer-save-btn {
+        width: 100%;
+        justify-content: center;
     }
 }

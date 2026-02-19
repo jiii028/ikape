@@ -186,14 +186,26 @@ export default function Dashboard() {
               <Layers size={20} />
               Your Clusters
             </h2>
-            <button
-              type="button"
-              className="cluster-visibility-btn"
-              onClick={() => setClustersVisible((prev) => !prev)}
-            >
-              {clustersVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-              {clustersVisible ? 'Hide All' : 'Show All'}
-            </button>
+            <div className="cluster-visibility-toggle" role="group" aria-label="Cluster visibility">
+              <button
+                type="button"
+                className={`cluster-visibility-option ${clustersVisible ? 'is-active' : ''}`}
+                onClick={() => setClustersVisible(true)}
+                aria-pressed={clustersVisible}
+              >
+                <Eye size={14} />
+                Show
+              </button>
+              <button
+                type="button"
+                className={`cluster-visibility-option ${!clustersVisible ? 'is-active' : ''}`}
+                onClick={() => setClustersVisible(false)}
+                aria-pressed={!clustersVisible}
+              >
+                <EyeOff size={14} />
+                Hide
+              </button>
+            </div>
           </div>
           {clustersVisible ? (
             <div className="farms-grid">
