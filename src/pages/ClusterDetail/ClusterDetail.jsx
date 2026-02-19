@@ -133,6 +133,7 @@ export default function ClusterDetail() {
   const { getCluster, updateCluster } = useFarm()
   const cluster = getCluster(clusterId)
   const [form, setForm] = useState({})
+  const [isDirty, setIsDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
   const [expandedHarvestGroups, setExpandedHarvestGroups] = useState({
@@ -172,17 +173,31 @@ export default function ClusterDetail() {
     }
   }, [form])
 
+  const sectionFormSnapshot = useMemo(() => {
+    const nextForm = {}
+    fields.forEach((field) => {
+      if (field.name === 'numberOfPlants') {
+        nextForm[field.name] = cluster?.plantCount ?? ''
+        return
+      }
+      nextForm[field.name] = cluster?.stageData?.[field.name] ?? ''
+    })
+    return nextForm
+  }, [cluster?.plantCount, cluster?.stageData, fields])
+
   useEffect(() => {
     if (!SECTION_FIELDS[section]) {
       navigate(`/clusters/${clusterId}/overview`, { replace: true })
       return
     }
-    const nextForm = {}
-    fields.forEach((field) => {
-      nextForm[field.name] = cluster?.stageData?.[field.name] ?? ''
-    })
-    setForm(nextForm)
-  }, [cluster, clusterId, fields, navigate, section])
+    setIsDirty(false)
+  }, [clusterId, navigate, section])
+
+  useEffect(() => {
+    if (!isDirty) {
+      setForm(sectionFormSnapshot)
+    }
+  }, [isDirty, sectionFormSnapshot])
 
   if (!cluster) {
     return (
@@ -198,6 +213,7 @@ export default function ClusterDetail() {
   }
 
   const handleFieldChange = (e) => {
+    setIsDirty(true)
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
@@ -227,13 +243,19 @@ export default function ClusterDetail() {
   const doSave = async () => {
     if (isHarvestLocked) return
     setSaving(true)
-    await updateCluster(cluster.id, {
-      stageData: {
-        ...(cluster.stageData || {}),
-        ...form,
-      },
-    })
-    setSaving(false)
+    try {
+      const { numberOfPlants, ...stageDataPayload } = form
+      await updateCluster(cluster.id, {
+        stageData: {
+          ...(cluster.stageData || {}),
+          ...stageDataPayload,
+        },
+      })
+      setShowSaveConfirm(false)
+      setIsDirty(false)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const renderField = (field) => (
@@ -274,6 +296,7 @@ export default function ClusterDetail() {
           max={field.max}
           value={form[field.name] ?? ''}
           onChange={handleFieldChange}
+          disabled={field.name === 'numberOfPlants'}
           placeholder={field.label}
         />
       )}

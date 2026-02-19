@@ -34,8 +34,8 @@ export function AuthProvider({ children }) {
   // Fetch user profile from the users table
   const fetchProfile = async (userId) => {
     try {
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Profile fetch timeout')), 10000)
+      const timeoutPromise = new Promise((resolve) =>
+        setTimeout(() => resolve({ data: null, error: null, timedOut: true }), 10000)
       )
 
       const fetchPromise = supabase
@@ -44,7 +44,12 @@ export function AuthProvider({ children }) {
         .eq('id', userId)
         .maybeSingle()
 
-      const { data, error: err } = await Promise.race([fetchPromise, timeoutPromise])
+      const { data, error: err, timedOut } = await Promise.race([fetchPromise, timeoutPromise])
+
+      if (timedOut) {
+        console.warn('fetchProfile timed out after 10s')
+        return null
+      }
 
       if (err) {
         console.error('Error fetching profile:', err.message)
@@ -57,7 +62,7 @@ export function AuthProvider({ children }) {
 
       return data
     } catch (error) {
-      console.error('fetchProfile exception:', error.message)
+      console.warn('fetchProfile failed:', error.message)
       return null
     }
   }
