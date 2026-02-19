@@ -62,8 +62,6 @@ const INTERVENTION_BY_RISK = {
     },
 }
 
-import { fetchOverview } from '../../api/analytics'
-
 export default function AdminDashboard() {
     const [stats, setStats] = useState({
         totalFarmers: 0,
