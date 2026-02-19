@@ -4,6 +4,16 @@ import { X, Save } from 'lucide-react'
 import ConfirmDialog from '../ConfirmDialog/ConfirmDialog'
 import '../FarmFormModal/FarmFormModal.css'
 
+const PRUNING_FUTURE_DATE_ERROR = 'Last Pruned Date cannot be set to a future date.'
+
+function getTodayDateValue() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 const VARIETY_OPTIONS = ['Robusta', 'Arabica', 'Liberica', 'Excelsa', 'Others']
 const FERTILIZER_TYPE_OPTIONS = ['Organic', 'Non-Organic']
 const FERTILIZER_FREQ_OPTIONS = [
@@ -114,6 +124,7 @@ const STAGE_FIELDS = {
 export default function ClusterDetailModal({ cluster, onClose }) {
   const { updateCluster } = useFarm()
   const fields = STAGE_FIELDS[cluster.plantStage] || STAGE_FIELDS['seed-sapling']
+  const todayDate = getTodayDateValue()
   const [form, setForm] = useState(() => {
     const initial = {}
     fields.forEach((f) => {
@@ -129,6 +140,7 @@ export default function ClusterDetailModal({ cluster, onClose }) {
     return initial
   })
   const [isDirty, setIsDirty] = useState(false)
+  const [formError, setFormError] = useState('')
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
 
@@ -138,15 +150,29 @@ export default function ClusterDetailModal({ cluster, onClose }) {
   }, [form, initialForm])
 
   const handleChange = (e) => {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
+    const { name, value } = e.target
+    if (formError) setFormError('')
+    if (name === 'lastPrunedDate' && value && value > todayDate) {
+      setFormError(PRUNING_FUTURE_DATE_ERROR)
+      return
+    }
+    setForm((prev) => ({ ...prev, [name]: value }))
   }
 
   const handleSave = async (e) => {
     e.preventDefault()
+    if (form.lastPrunedDate && form.lastPrunedDate > todayDate) {
+      setFormError(PRUNING_FUTURE_DATE_ERROR)
+      return
+    }
     setShowSaveConfirm(true)
   }
 
   const doSave = async () => {
+    if (form.lastPrunedDate && form.lastPrunedDate > todayDate) {
+      setFormError(PRUNING_FUTURE_DATE_ERROR)
+      return
+    }
     await updateCluster(cluster.id, { stageData: form })
     onClose()
   }
@@ -188,7 +214,7 @@ export default function ClusterDetailModal({ cluster, onClose }) {
           type={field.type}
           step={field.step}
           min={field.min}
-          max={field.max}
+          max={field.name === 'lastPrunedDate' ? todayDate : field.max}
           value={form[field.name]}
           onChange={handleChange}
           placeholder={field.label}
@@ -208,6 +234,7 @@ export default function ClusterDetailModal({ cluster, onClose }) {
         </div>
 
         <form onSubmit={handleSave} className="modal-form">
+          {formError && <div className="modal-form-error">{formError}</div>}
           <div className="form-row" style={{ flexWrap: 'wrap' }}>
             {mainFields.map(renderField)}
           </div>

@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { FarmProvider } from './context/FarmContext'
 import Login from './pages/Login/Login'
 import Register from './pages/Register/Register'
+import ResetPassword from './pages/ResetPassword/ResetPassword'
 import DashboardLayout from './layouts/DashboardLayout'
 import Dashboard from './pages/Dashboard/Dashboard'
 import HarvestRecords from './pages/HarvestRecords/HarvestRecords'
@@ -68,6 +69,7 @@ function App() {
           {/* Public routes */}
           <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
           <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* Root redirects based on role */}
           <Route path="/" element={<HomeRedirect />} />

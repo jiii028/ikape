@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Save, ChevronDown } from 'lucide-react'
 import { useFarm } from '../../context/FarmContext'
+import { supabase } from '../../lib/supabase'
 import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
 import './ClusterDetail.css'
 
@@ -28,6 +29,8 @@ const PESTICIDE_FREQ_OPTIONS = [
   { value: 'Never', label: 'Never' },
 ]
 const SHADE_TREE_OPTIONS = ['Yes', 'No']
+const AGRICLIMATIC_FIELD_NAMES = ['monthlyTemperature', 'rainfall', 'humidity', 'soilPh']
+const PRUNING_FUTURE_DATE_ERROR = 'Last Pruned Date cannot be set to a future date.'
 
 const SECTION_FIELDS = {
   overview: [
@@ -134,8 +137,10 @@ export default function ClusterDetail() {
   const cluster = getCluster(clusterId)
   const [form, setForm] = useState({})
   const [isDirty, setIsDirty] = useState(false)
+  const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
+  const [agriclimaticData, setAgriclimaticData] = useState(null)
   const [expandedHarvestGroups, setExpandedHarvestGroups] = useState({
     timing: true,
     yield: true,
@@ -146,6 +151,10 @@ export default function ClusterDetail() {
   const isHarvestSection = section === 'harvest'
   const isReadyToHarvest = cluster?.plantStage === 'ready-to-harvest'
   const isHarvestLocked = isHarvestSection && !isReadyToHarvest
+  const isPruningSection = section === 'pruning'
+  const isPruningLocked = isPruningSection && cluster?.plantStage === 'seed-sapling'
+  const isSectionLocked = isHarvestLocked || isPruningLocked
+  const todayDate = useMemo(() => formatDateLocal(new Date()), [])
 
   const fields = useMemo(() => SECTION_FIELDS[section] || [], [section])
   const harvestFieldsByName = useMemo(
@@ -172,6 +181,67 @@ export default function ClusterDetail() {
       percent: total > 0 ? Math.round((completed / total) * 100) : 0,
     }
   }, [form])
+  const isOverviewSection = section === 'overview'
+
+  useEffect(() => {
+    if (!isOverviewSection) return
+
+    let isCancelled = false
+    const fetchAgriclimatic = async () => {
+      const { data, error } = await supabase
+        .from('agriclimatic_admin')
+        .select('monthly_temperature, rainfall, humidity, soil_ph, updated_at, created_at')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) {
+        console.error('Error fetching agriclimatic_admin:', error.message)
+        return
+      }
+
+      if (!isCancelled && data) {
+        setAgriclimaticData({
+          monthlyTemperature: data.monthly_temperature ?? '',
+          rainfall: data.rainfall ?? '',
+          humidity: data.humidity ?? '',
+          soilPh: data.soil_ph ?? '',
+        })
+      }
+    }
+
+    fetchAgriclimatic()
+    return () => {
+      isCancelled = true
+    }
+  }, [isOverviewSection])
+
+  useEffect(() => {
+    if (!isOverviewSection || !cluster?.id || !agriclimaticData) return
+
+    const hasAgriclimaticMismatch = AGRICLIMATIC_FIELD_NAMES.some((fieldName) => {
+      const clusterVal = cluster.stageData?.[fieldName]
+      const adminVal = agriclimaticData[fieldName]
+
+      const normalizedClusterVal =
+        clusterVal === '' || clusterVal === undefined || clusterVal === null ? null : Number(clusterVal)
+      const normalizedAdminVal =
+        adminVal === '' || adminVal === undefined || adminVal === null ? null : Number(adminVal)
+
+      return normalizedClusterVal !== normalizedAdminVal
+    })
+
+    if (!hasAgriclimaticMismatch) return
+
+    updateCluster(cluster.id, {
+      stageData: {
+        monthlyTemperature: agriclimaticData.monthlyTemperature,
+        rainfall: agriclimaticData.rainfall,
+        humidity: agriclimaticData.humidity,
+        soilPh: agriclimaticData.soilPh,
+      },
+    })
+  }, [agriclimaticData, cluster?.id, cluster?.stageData, isOverviewSection, updateCluster])
 
   const sectionFormSnapshot = useMemo(() => {
     const nextForm = {}
@@ -180,10 +250,16 @@ export default function ClusterDetail() {
         nextForm[field.name] = cluster?.plantCount ?? ''
         return
       }
+      if (isOverviewSection && AGRICLIMATIC_FIELD_NAMES.includes(field.name)) {
+        if (agriclimaticData && agriclimaticData[field.name] !== undefined) {
+          nextForm[field.name] = agriclimaticData[field.name]
+          return
+        }
+      }
       nextForm[field.name] = cluster?.stageData?.[field.name] ?? ''
     })
     return nextForm
-  }, [cluster?.plantCount, cluster?.stageData, fields])
+  }, [agriclimaticData, cluster?.plantCount, cluster?.stageData, fields, isOverviewSection])
 
   useEffect(() => {
     if (!SECTION_FIELDS[section]) {
@@ -191,6 +267,7 @@ export default function ClusterDetail() {
       return
     }
     setIsDirty(false)
+    setFormError('')
   }, [clusterId, navigate, section])
 
   useEffect(() => {
@@ -213,8 +290,15 @@ export default function ClusterDetail() {
   }
 
   const handleFieldChange = (e) => {
+    const { name, value } = e.target
+    if (formError) setFormError('')
+    if (name === 'lastPrunedDate' && value && value > todayDate) {
+      setFormError(PRUNING_FUTURE_DATE_ERROR)
+      return
+    }
+    if (isOverviewSection && AGRICLIMATIC_FIELD_NAMES.includes(e.target.name)) return
     setIsDirty(true)
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
+    setForm((prev) => ({ ...prev, [name]: value }))
   }
 
   const handleStageChange = async (e) => {
@@ -236,12 +320,20 @@ export default function ClusterDetail() {
 
   const handleSave = (e) => {
     e.preventDefault()
-    if (isHarvestLocked) return
+    if (isSectionLocked) return
+    if (form.lastPrunedDate && form.lastPrunedDate > todayDate) {
+      setFormError(PRUNING_FUTURE_DATE_ERROR)
+      return
+    }
     setShowSaveConfirm(true)
   }
 
   const doSave = async () => {
-    if (isHarvestLocked) return
+    if (isSectionLocked) return
+    if (form.lastPrunedDate && form.lastPrunedDate > todayDate) {
+      setFormError(PRUNING_FUTURE_DATE_ERROR)
+      return
+    }
     setSaving(true)
     try {
       const { numberOfPlants, ...stageDataPayload } = form
@@ -266,6 +358,7 @@ export default function ClusterDetail() {
           name={field.name}
           value={form[field.name] ?? ''}
           onChange={handleFieldChange}
+          disabled={isOverviewSection && AGRICLIMATIC_FIELD_NAMES.includes(field.name)}
         >
           <option value="">Select...</option>
           {field.options.map((opt) => (
@@ -279,6 +372,7 @@ export default function ClusterDetail() {
           name={field.name}
           value={form[field.name] ?? ''}
           onChange={handleFieldChange}
+          disabled={isOverviewSection && AGRICLIMATIC_FIELD_NAMES.includes(field.name)}
         >
           <option value="">Select...</option>
           {field.options.map((opt) => (
@@ -293,10 +387,10 @@ export default function ClusterDetail() {
           type={field.type}
           step={field.step}
           min={field.min}
-          max={field.max}
+          max={field.name === 'lastPrunedDate' ? todayDate : field.max}
           value={form[field.name] ?? ''}
           onChange={handleFieldChange}
-          disabled={field.name === 'numberOfPlants'}
+          disabled={field.name === 'numberOfPlants' || (isOverviewSection && AGRICLIMATIC_FIELD_NAMES.includes(field.name))}
           placeholder={field.label}
         />
       )}
@@ -327,18 +421,23 @@ export default function ClusterDetail() {
 
       <div className="cd-card">
         <h2>{SECTION_TITLES[section]}</h2>
-        {isHarvestLocked && (
+        {isSectionLocked && (
           <div className="cd-lock-panel">
             <p className="cd-lock-note">
-              Harvest inputs are available only when the cluster stage is Ready to Harvest.
+              {isHarvestLocked
+                ? 'Harvest inputs are available only when the cluster stage is Ready to Harvest.'
+                : 'Pruning inputs are not available while the cluster stage is Seed / Sapling.'}
             </p>
             <p className="cd-lock-note-sub">
-              Use the Plant Stage selector above to change this cluster to Ready to Harvest.
+              {isHarvestLocked
+                ? 'Use the Plant Stage selector above to change this cluster to Ready to Harvest.'
+                : 'Use the Plant Stage selector above to move this cluster to Tree or later before logging pruning data.'}
             </p>
           </div>
         )}
-        {!isHarvestLocked && (
+        {!isSectionLocked && (
           <form className="cd-form" onSubmit={handleSave}>
+            {formError && <div className="cd-form-error">{formError}</div>}
             {isHarvestSection ? (
               <>
                 <div className="harvest-form-toolbar">

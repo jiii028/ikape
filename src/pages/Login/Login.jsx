@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { Sprout, Eye, EyeOff, Leaf, Coffee, Flower2, LogIn } from 'lucide-react'
+import { Sprout, Eye, EyeOff, Leaf, Coffee, Flower2, LogIn, KeyRound } from 'lucide-react'
 import LoadingScreen from '../../components/LoadingScreen'
+import ForgotPasswordModal from '../../components/ForgotPasswordModal/ForgotPasswordModal'
 import './Login.css'
 
 export default function Login() {
@@ -10,7 +11,8 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoggingIn, setIsLoggingIn] = useState(false)
-  const { login, error, setError } = useAuth()
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
+  const { login, error, setError, requestPasswordReset } = useAuth()
   const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
@@ -59,6 +61,8 @@ export default function Login() {
   if (isLoggingIn) {
     return <LoadingScreen message="Signing you in..." />
   }
+
+  const defaultForgotEmail = identifier.includes('@') ? identifier : ''
 
   return (
     <div className="auth-page">
@@ -111,6 +115,14 @@ export default function Login() {
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+              <button
+                type="button"
+                className="forgot-password-link"
+                onClick={() => setForgotPasswordOpen(true)}
+              >
+                <KeyRound size={14} />
+                Forgot Password?
+              </button>
             </div>
 
             <button type="submit" className="auth-btn">
@@ -127,6 +139,13 @@ export default function Login() {
           </p>
         </div>
       </div>
+
+      <ForgotPasswordModal
+        isOpen={forgotPasswordOpen}
+        onClose={() => setForgotPasswordOpen(false)}
+        onSubmit={requestPasswordReset}
+        defaultEmail={defaultForgotEmail}
+      />
     </div>
   )
 }

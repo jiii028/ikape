@@ -1,13 +1,14 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
-import { User, Mail, Phone, MapPin, Save, LogOut, Calendar } from 'lucide-react';
-import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog';
-import './Settings.css';
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
+import { User, Mail, Phone, MapPin, Save, LogOut, Calendar, KeyRound } from 'lucide-react'
+import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
+import ForgotPasswordModal from '../../components/ForgotPasswordModal/ForgotPasswordModal'
+import './Settings.css'
 
 export default function Settings() {
-  const { user, logout, updateProfile } = useAuth();
-  const navigate = useNavigate();
+  const { user, logout, updateProfile, requestPasswordReset } = useAuth()
+  const navigate = useNavigate()
   const [form, setForm] = useState({
     firstName: user?.firstName || '',
     middleInitial: user?.middleInitial || '',
@@ -17,33 +18,34 @@ export default function Settings() {
     contactNumber: user?.contactNumber || '',
     municipality: user?.municipality || '',
     province: user?.province || '',
-  });
-  const [saved, setSaved] = useState(false);
-  const [logoutConfirm, setLogoutConfirm] = useState(false);
-  const [saveConfirm, setSaveConfirm] = useState(false);
+  })
+  const [saved, setSaved] = useState(false)
+  const [logoutConfirm, setLogoutConfirm] = useState(false)
+  const [saveConfirm, setSaveConfirm] = useState(false)
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
 
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-    setSaved(false);
-  };
+  const handleChange = (event) => {
+    setForm({ ...form, [event.target.name]: event.target.value })
+    setSaved(false)
+  }
 
-  const handleSave = (e) => {
-    e.preventDefault();
-    setSaveConfirm(true);
-  };
+  const handleSave = (event) => {
+    event.preventDefault()
+    setSaveConfirm(true)
+  }
 
   const doSave = async () => {
-    const success = await updateProfile(form);
+    const success = await updateProfile(form)
     if (success) {
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
     }
-  };
+  }
 
   const handleLogout = async () => {
-    await logout();
-    navigate('/login', { replace: true });
-  };
+    await logout()
+    navigate('/login', { replace: true })
+  }
 
   return (
     <div className="settings-page">
@@ -55,7 +57,6 @@ export default function Settings() {
       </div>
 
       <div className="settings-grid">
-        {/* Profile Card */}
         <div className="settings-card profile-card">
           <div className="profile-avatar">
             <User size={40} />
@@ -79,27 +80,26 @@ export default function Settings() {
             <div className="profile-detail-item">
               <Mail size={13} />
               <span className="detail-label">Email</span>
-              <span className="detail-value">{user?.email || '—'}</span>
+              <span className="detail-value">{user?.email || '-'}</span>
             </div>
             <div className="profile-detail-item">
               <Phone size={13} />
               <span className="detail-label">Contact</span>
-              <span className="detail-value">{user?.contactNumber || '—'}</span>
+              <span className="detail-value">{user?.contactNumber || '-'}</span>
             </div>
             <div className="profile-detail-item">
               <MapPin size={13} />
               <span className="detail-label">Municipality</span>
-              <span className="detail-value">{user?.municipality || '—'}</span>
+              <span className="detail-value">{user?.municipality || '-'}</span>
             </div>
             <div className="profile-detail-item">
               <MapPin size={13} />
               <span className="detail-label">Province</span>
-              <span className="detail-value">{user?.province || '—'}</span>
+              <span className="detail-value">{user?.province || '-'}</span>
             </div>
           </div>
         </div>
 
-        {/* Edit Profile Form */}
         <form className="settings-card settings-form" onSubmit={handleSave}>
           <h2>Edit Profile</h2>
 
@@ -194,21 +194,26 @@ export default function Settings() {
             <button type="submit" className="btn-save">
               <Save size={16} /> Save Changes
             </button>
-            {saved && <span className="save-success">✓ Saved successfully!</span>}
+            {saved && <span className="save-success">Saved successfully!</span>}
           </div>
         </form>
 
-        {/* Account Actions */}
         <div className="settings-card">
           <h2>Account</h2>
           <p className="settings-desc">Manage your account settings and session.</p>
 
-          <button className="btn-logout" onClick={() => setLogoutConfirm(true)}>
-            <LogOut size={16} /> Sign Out
-          </button>
+          <div className="account-actions">
+            <button className="btn-forgot-password" onClick={() => setForgotPasswordOpen(true)}>
+              <KeyRound size={16} /> Forgot Password
+            </button>
+
+            <button className="btn-logout" onClick={() => setLogoutConfirm(true)}>
+              <LogOut size={16} /> Sign Out
+            </button>
+          </div>
         </div>
       </div>
-      
+
       <ConfirmDialog
         isOpen={saveConfirm}
         onClose={() => setSaveConfirm(false)}
@@ -230,6 +235,13 @@ export default function Settings() {
         cancelText="Cancel"
         variant="warning"
       />
+
+      <ForgotPasswordModal
+        isOpen={forgotPasswordOpen}
+        onClose={() => setForgotPasswordOpen(false)}
+        onSubmit={requestPasswordReset}
+        defaultEmail={form.email || user?.email || ''}
+      />
     </div>
-  );
+  )
 }

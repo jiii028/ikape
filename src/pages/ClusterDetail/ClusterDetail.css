@@ -205,6 +205,16 @@
   margin-bottom: 6px;
 }
 
+.cd-form-error {
+  padding: 10px 12px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .cd-form .form-group input,
 .cd-form .form-group select {
   width: 100%;
@@ -220,6 +230,21 @@
 .cd-form .form-group select:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(45, 90, 45, 0.1);
+}
+
+.cd-form .form-group input:disabled,
+.cd-form .form-group select:disabled {
+  background: #f8faf8;
+  color: var(--text-secondary);
+  cursor: not-allowed;
+  border-style: dashed;
+}
+
+.field-help-note {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-light);
 }
 
 .cd-actions {

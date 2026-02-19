@@ -185,6 +185,23 @@
   padding: 4px;
 }
 
+.forgot-password-link {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  background: transparent;
+  padding: 0;
+}
+
+.forgot-password-link:hover {
+  color: var(--primary-light);
+  text-decoration: underline;
+}
+
 .auth-btn {
   display: flex;
   justify-content: center;

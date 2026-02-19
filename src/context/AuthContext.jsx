@@ -325,6 +325,31 @@ export function AuthProvider({ children }) {
     }
   }
 
+  // ===== Forgot Password =====
+  const requestPasswordReset = async (email) => {
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : ''
+    if (!normalizedEmail) {
+      return { success: false, error: 'Please enter your email address.' }
+    }
+
+    try {
+      const redirectTo = `${window.location.origin}/reset-password`
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo,
+      })
+
+      if (resetError) {
+        console.error('Password reset error:', resetError.message)
+        return { success: false, error: resetError.message || 'Unable to send reset link.' }
+      }
+
+      return { success: true }
+    } catch (err) {
+      console.error('Password reset request failed:', err)
+      return { success: false, error: 'Unable to send reset link right now. Please try again.' }
+    }
+  }
+
   // ===== Logout =====
   const logout = async () => {
     // Clear local state FIRST so route guards react instantly
@@ -396,6 +421,7 @@ export function AuthProvider({ children }) {
         setError,
         register,
         login,
+        requestPasswordReset,
         logout,
         updateProfile,
       }}
