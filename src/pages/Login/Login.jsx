@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { Sprout, Eye, EyeOff } from 'lucide-react'
+import { Sprout, Eye, EyeOff, Leaf, Coffee, Flower2, LogIn } from 'lucide-react'
 import LoadingScreen from '../../components/LoadingScreen'
 import './Login.css'
 
@@ -69,10 +69,10 @@ export default function Login() {
           <p>Coffee Farm Management System</p>
         </div>
         <div className="auth-illustration">
-          <div className="leaf leaf-1">🌿</div>
-          <div className="leaf leaf-2">☕</div>
-          <div className="leaf leaf-3">🌱</div>
-          <div className="leaf leaf-4">🍃</div>
+          <div className="leaf leaf-1" aria-hidden="true"><Leaf /></div>
+          <div className="leaf leaf-2" aria-hidden="true"><Coffee /></div>
+          <div className="leaf leaf-3" aria-hidden="true"><Sprout /></div>
+          <div className="leaf leaf-4" aria-hidden="true"><Flower2 /></div>
         </div>
       </div>
 
@@ -114,7 +114,10 @@ export default function Login() {
             </div>
 
             <button type="submit" className="auth-btn">
-              🌿 Sign In
+              <span className="auth-btn-content">
+                <LogIn size={16} />
+                Sign In
+              </span>
             </button>
           </form>
 

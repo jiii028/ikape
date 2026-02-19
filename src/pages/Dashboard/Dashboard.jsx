@@ -29,6 +29,13 @@ const STAGE_CONFIG = {
   'ready-to-harvest': { label: 'Ready to Harvest', icon: Coffee, color: '#f87171', bg: '#fef2f2' },
 }
 
+const STAGE_OVERVIEW = {
+  'seed-sapling': { label: 'Seed / Sapling', icon: Sprout },
+  'tree': { label: 'Tree', icon: TreePine },
+  'flowering': { label: 'Flowering / Fruit-bearing', icon: Flower2 },
+  'ready-to-harvest': { label: 'Ready to Harvest', icon: Coffee },
+}
+
 export default function Dashboard() {
   const { farm, clusters, deleteCluster } = useFarm()
   const navigate = useNavigate()
@@ -85,7 +92,10 @@ export default function Dashboard() {
       ) : (
         <div className="farm-info-card">
           <div className="farm-info-header">
-            <h3>🌿 {farm.farm_name}</h3>
+            <h3 className="farm-title">
+              <Leaf size={18} />
+              {farm.farm_name}
+            </h3>
             <button className="btn-icon" onClick={() => setShowFarmForm(true)} title="Edit Farm">
               <Edit size={16} />
             </button>
@@ -214,7 +224,7 @@ export default function Dashboard() {
                       <span>{cluster.plantCount} plants</span>
                       {cluster.plantStage === 'flowering' && (
                         <>
-                          <span>•</span>
+                          <span className="farm-detail-separator" aria-hidden="true"></span>
                           <CalendarDays size={14} />
                           <span>Estimated: {formatEstimatedDate(cluster.stageData?.estimatedHarvestDate)}</span>
                         </>
@@ -246,17 +256,15 @@ export default function Dashboard() {
           <div className="stage-cards">
             {['seed-sapling', 'tree', 'flowering', 'ready-to-harvest'].map((stage) => {
               const count = clusters.filter((c) => c.plantStage === stage).length
-              const labels = {
-                'seed-sapling': { label: 'Seed / Sapling', emoji: '🌱' },
-                'tree': { label: 'Tree', emoji: '🌳' },
-                'flowering': { label: 'Flowering / Fruit-bearing', emoji: '🌸' },
-                'ready-to-harvest': { label: 'Ready to Harvest', emoji: '☕' },
-              }
+              const overview = STAGE_OVERVIEW[stage]
+              const StageOverviewIcon = overview.icon
               return (
                 <div key={stage} className={`stage-card stage-card--${stage}`}>
-                  <span className="stage-emoji">{labels[stage].emoji}</span>
+                  <span className="stage-icon" aria-hidden="true">
+                    <StageOverviewIcon size={24} />
+                  </span>
                   <span className="stage-count">{count}</span>
-                  <span className="stage-label">{labels[stage].label}</span>
+                  <span className="stage-label">{overview.label}</span>
                 </div>
               )
             })}

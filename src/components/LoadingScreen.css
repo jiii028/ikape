@@ -58,9 +58,16 @@
 /* Clouds */
 .loading-cloud {
     position: absolute;
-    font-size: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(209, 250, 229, 0.85);
     opacity: 0.6;
     animation: cloudDrift 8s ease-in-out infinite;
+}
+
+.loading-cloud svg {
+    stroke-width: 1.8;
 }
 
 .cloud-1 {
@@ -72,7 +79,6 @@
 .cloud-2 {
     top: 25px;
     left: 60px;
-    font-size: 18px;
     opacity: 0.4;
     animation-delay: -3s;
     animation-duration: 10s;
@@ -165,8 +171,16 @@
 /* Floating beans */
 .loading-bean {
     position: absolute;
-    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #bbf7d0;
+    filter: drop-shadow(0 0 6px rgba(167, 243, 208, 0.5));
     animation: beanFloat 4s ease-in-out infinite;
+}
+
+.loading-bean svg {
+    stroke-width: 1.9;
 }
 
 .bean-1 {
@@ -184,7 +198,6 @@
 .bean-3 {
     bottom: 80px;
     left: 40px;
-    font-size: 14px;
     animation-delay: -3s;
 }
 

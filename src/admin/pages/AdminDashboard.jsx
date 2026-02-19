@@ -8,6 +8,8 @@ import {
     TrendingUp,
     TrendingDown,
     AlertTriangle,
+    AlertCircle,
+    CheckCircle,
     Download,
     Eye,
     Bell,
@@ -29,6 +31,36 @@ const RISK_COLORS = { Low: '#22c55e', Moderate: '#f59e0b', High: '#f97316', Crit
 const GRADE_COLORS = ['#22c55e', '#3b82f6', '#f59e0b']
 const ADMIN_DASHBOARD_CACHE_KEY = 'admin_dashboard:overview'
 const ADMIN_DASHBOARD_CACHE_TTL_MS = 2 * 60 * 1000
+
+const INTERVENTION_BY_RISK = {
+    Critical: {
+        icon: AlertCircle,
+        tone: 'critical',
+        items: [
+            'Immediate soil analysis and pH correction',
+            'Urgent pest control inspection required',
+            'Fertilization schedule adjustment - increase NPK',
+        ],
+    },
+    High: {
+        icon: AlertTriangle,
+        tone: 'high',
+        items: [
+            'Schedule pruning within 2 weeks',
+            'Apply organic pesticide treatment',
+            'Monitor shade tree density',
+        ],
+    },
+    Moderate: {
+        icon: CheckCircle,
+        tone: 'moderate',
+        items: [
+            'Follow regular fertilization schedule',
+            'Check irrigation levels',
+            'Monitor for early pest signs',
+        ],
+    },
+}
 
 export default function AdminDashboard() {
     const [stats, setStats] = useState({
@@ -289,6 +321,7 @@ export default function AdminDashboard() {
         ? ((yieldDiff / stats.predictedYield) * 100).toFixed(1)
         : 0
     const isOverProduction = yieldDiff >= 0
+    const selectedInterventions = selectedCluster ? INTERVENTION_BY_RISK[selectedCluster.riskLevel] : null
 
     if (loading) {
         return (
@@ -588,26 +621,18 @@ export default function AdminDashboard() {
 
                             <h3 className="admin-detail-section-title">Recommended Interventions</h3>
                             <ul className="admin-interventions">
-                                {selectedCluster.riskLevel === 'Critical' && (
-                                    <>
-                                        <li>🔴 Immediate soil analysis and pH correction</li>
-                                        <li>🔴 Urgent pest control inspection required</li>
-                                        <li>🔴 Fertilization schedule adjustment — increase NPK</li>
-                                    </>
-                                )}
-                                {selectedCluster.riskLevel === 'High' && (
-                                    <>
-                                        <li>🟠 Schedule pruning within 2 weeks</li>
-                                        <li>🟠 Apply organic pesticide treatment</li>
-                                        <li>🟠 Monitor shade tree density</li>
-                                    </>
-                                )}
-                                {selectedCluster.riskLevel === 'Moderate' && (
-                                    <>
-                                        <li>🟡 Follow regular fertilization schedule</li>
-                                        <li>🟡 Check irrigation levels</li>
-                                        <li>🟡 Monitor for early pest signs</li>
-                                    </>
+                                {selectedInterventions ? selectedInterventions.items.map((item) => {
+                                    const InterventionIcon = selectedInterventions.icon
+                                    return (
+                                        <li key={item} className={`admin-intervention admin-intervention--${selectedInterventions.tone}`}>
+                                            <InterventionIcon size={14} />
+                                            <span>{item}</span>
+                                        </li>
+                                    )
+                                }) : (
+                                    <li className="admin-intervention">
+                                        <span>No intervention recommendations available for this risk level.</span>
+                                    </li>
                                 )}
                             </ul>
                         </div>

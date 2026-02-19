@@ -108,6 +108,16 @@
   color: var(--primary-dark);
 }
 
+.farm-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.farm-title svg {
+  color: var(--primary-lighter);
+}
+
 .farm-info-details {
   display: flex;
   gap: 24px;
@@ -310,6 +320,14 @@
   color: var(--primary-lighter);
 }
 
+.farm-detail-separator {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-light);
+  margin: 0 2px;
+}
+
 .farm-card-footer {
   display: flex;
   align-items: center;
@@ -362,9 +380,15 @@
 .stage-card--tree { border-bottom-color: #34d399; }
 .stage-card--flowering { border-bottom-color: #fbbf24; }
 .stage-card--ready-to-harvest { border-bottom-color: #f87171; }
+.stage-card--seed-sapling .stage-icon { color: #16a34a; }
+.stage-card--tree .stage-icon { color: #059669; }
+.stage-card--flowering .stage-icon { color: #d97706; }
+.stage-card--ready-to-harvest .stage-icon { color: #dc2626; }
 
-.stage-emoji {
-  font-size: 28px;
+.stage-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .stage-count {
