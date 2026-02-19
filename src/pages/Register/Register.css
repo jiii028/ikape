@@ -1,0 +1,150 @@
+.register-form-container {
+  max-width: 760px;
+}
+
+.register-header h2,
+.register-subtitle {
+  text-align: center;
+}
+
+.register-form {
+  gap: 14px;
+}
+
+.register-section {
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 14px;
+  background: var(--bg-card);
+}
+
+.register-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.register-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.register-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.register-input {
+  width: 100%;
+}
+
+.register-input--error {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+}
+
+.register-field-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.register-password-hint {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.register-submit-btn {
+  margin-top: 6px;
+}
+
+.register-switch {
+  margin-top: 14px;
+}
+
+.register-redirect-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.48);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1200;
+}
+
+.register-redirect-modal {
+  width: 100%;
+  max-width: 380px;
+  border-radius: 14px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-card);
+  padding: 18px 16px;
+  box-shadow: var(--shadow-md);
+  text-align: center;
+}
+
+.register-redirect-spinner-wrap {
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  margin: 0 auto 10px;
+  background: rgba(45, 90, 45, 0.12);
+  color: var(--primary);
+  display: grid;
+  place-items: center;
+}
+
+.register-redirect-spinner {
+  animation: register-spin 1s linear infinite;
+}
+
+@keyframes register-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.register-redirect-modal h3 {
+  font-size: 19px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.register-redirect-modal p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.register-redirect-caption {
+  display: block;
+  font-size: 12px;
+  color: var(--text-light);
+  margin-bottom: 12px;
+}
+
+.register-redirect-btn {
+  background: transparent;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0;
+}
+
+@media (max-width: 900px) {
+  .register-grid--two {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .register-form-container {
+    max-width: 100%;
+  }
+
+  .register-section {
+    padding: 12px;
+  }
+}

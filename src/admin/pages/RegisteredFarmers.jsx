@@ -40,7 +40,14 @@ export default function RegisteredFarmers() {
     const [successMessage, setSuccessMessage] = useState('')
 
     useEffect(() => {
-        fetchFarmers(true)
+        fetchFarmers(false)
+
+        const handleFocus = () => {
+            fetchFarmers(false)
+        }
+
+        window.addEventListener('focus', handleFocus)
+        return () => window.removeEventListener('focus', handleFocus)
     }, [])
 
     const fetchFarmers = async (useCache = true) => {

@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { Sprout, Eye, EyeOff, Leaf, Coffee, Flower2, LogIn, KeyRound } from 'lucide-react'
 import LoadingScreen from '../../components/LoadingScreen'
@@ -12,8 +12,21 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoggingIn, setIsLoggingIn] = useState(false)
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
+  const [registerSuccessMessage, setRegisterSuccessMessage] = useState('')
   const { login, error, setError, requestPasswordReset } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+
+  useEffect(() => {
+    const flashMessage = location.state?.registerSuccess
+    if (!flashMessage) return
+
+    setRegisterSuccessMessage(flashMessage)
+    navigate(`${location.pathname}${location.search}${location.hash}`, {
+      replace: true,
+      state: null,
+    })
+  }, [location, navigate])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -85,6 +98,7 @@ export default function Login() {
           <h2>Welcome Back</h2>
           <p className="auth-subtitle">Sign in to your account</p>
 
+          {registerSuccessMessage && <div className="auth-success">{registerSuccessMessage}</div>}
           {error && <div className="auth-error">{error}</div>}
 
           <form onSubmit={handleSubmit} className="auth-form">
