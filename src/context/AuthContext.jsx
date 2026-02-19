@@ -33,16 +33,33 @@ export function AuthProvider({ children }) {
 
   // Fetch user profile from the users table
   const fetchProfile = async (userId) => {
-    const { data, error: err } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle()
-    if (err) {
-      console.error('Error fetching profile:', err.message)
+    try {
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Profile fetch timeout')), 3000)
+      )
+
+      const fetchPromise = supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle()
+
+      const { data, error: err } = await Promise.race([fetchPromise, timeoutPromise])
+
+      if (err) {
+        console.error('Error fetching profile:', err.message)
+        return null
+      }
+
+      if (!data) {
+        console.warn('No profile found for user')
+      }
+
+      return data
+    } catch (error) {
+      console.error('fetchProfile exception:', error.message)
       return null
     }
-    return data
   }
 
   // ===== Session Initialization =====
