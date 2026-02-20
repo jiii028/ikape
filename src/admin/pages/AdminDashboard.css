@@ -16,12 +16,12 @@
 .admin-dash-header h1 {
     font-size: 26px;
     font-weight: 700;
-    color: #1e293b;
+    color: var(--text-primary);
 }
 
 .admin-dash-header p {
     font-size: 14px;
-    color: #64748b;
+    color: var(--text-secondary);
     margin-top: 4px;
 }
 
@@ -30,7 +30,7 @@
     align-items: center;
     gap: 8px;
     padding: 10px 20px;
-    background: linear-gradient(135deg, #1e293b, #334155);
+    background: var(--primary);
     color: #fff;
     border-radius: 8px;
     font-size: 13px;
@@ -40,8 +40,7 @@
 }
 
 .admin-export-btn:hover {
-    box-shadow: 0 4px 16px rgba(30, 41, 59, 0.3);
-    transform: translateY(-1px);
+    background: var(--primary-light);
 }
 
 /* ===== KPI GRID ===== */
@@ -58,14 +57,13 @@
     display: flex;
     align-items: center;
     gap: 16px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-    border: 1px solid #f1f5f9;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-light);
     transition: all 0.2s ease;
 }
 
 .admin-kpi-card:hover {
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
 }
 
 .admin-kpi-icon {
@@ -110,8 +108,8 @@
     background: #ffffff;
     border-radius: 12px;
     padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-    border: 1px solid #f1f5f9;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-light);
 }
 
 .admin-chart-header {
@@ -129,8 +127,8 @@
     background: #ffffff;
     border-radius: 12px;
     padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-    border: 1px solid #f1f5f9;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-light);
 }
 
 .admin-critical-header {
@@ -489,8 +487,8 @@
     background: #ffffff;
     border-radius: 12px;
     padding: 20px 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-    border: 1px solid #f1f5f9;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-light);
 }
 
 .admin-audit-section h3 {

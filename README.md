@@ -27,6 +27,25 @@ npm install
 npm run dev
 ```
 
+## ML Model API (Final Trained Models)
+
+The app can use the trained models in `ml_models/` through the FastAPI service in `backend/predict_api.py`.
+
+1. Install backend dependencies:
+```bash
+py -m pip install -r backend/requirements.txt
+```
+
+2. Start the model API:
+```bash
+py -m uvicorn backend.predict_api:app --reload --host 0.0.0.0 --port 8000
+```
+
+3. Point the frontend to the API (optional; default is `http://localhost:8000`):
+```bash
+VITE_ML_API_URL=http://localhost:8000
+```
+
 The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
 ## Expanding the ESLint configuration

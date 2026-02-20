@@ -229,8 +229,8 @@ export default function Settings() {
         isOpen={logoutConfirm}
         onClose={() => setLogoutConfirm(false)}
         onConfirm={handleLogout}
-        title="Confirm Logout"
-        message="Are you sure you want to log out? You will need to log in again to access your account."
+        title="Log out of your account?"
+        message="Your current session will end on this device."
         confirmText="Log Out"
         cancelText="Cancel"
         variant="warning"

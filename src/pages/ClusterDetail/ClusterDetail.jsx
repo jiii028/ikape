@@ -433,7 +433,23 @@ export default function ClusterDetail() {
 
   const handleStageChange = async (e) => {
     const nextStage = e.target.value
-    const updates = { plantStage: nextStage }
+    const resolvedVariety =
+      (typeof form?.variety === 'string' && form.variety.trim()) ||
+      (typeof cluster?.stageData?.variety === 'string' && cluster.stageData.variety.trim()) ||
+      (typeof cluster?.variety === 'string' && cluster.variety.trim()) ||
+      ''
+
+    const updates = {
+      plantStage: nextStage,
+      ...(resolvedVariety
+        ? {
+            stageData: {
+              ...(cluster.stageData || {}),
+              variety: resolvedVariety,
+            },
+          }
+        : {}),
+    }
 
     // When cluster enters flowering stage, auto-compute estimated harvest date (+11 months).
     if (nextStage === 'flowering') {
@@ -441,6 +457,7 @@ export default function ClusterDetail() {
       const estimate = new Date(now.getFullYear(), now.getMonth() + 11, now.getDate())
       updates.stageData = {
         ...(cluster.stageData || {}),
+        ...(resolvedVariety ? { variety: resolvedVariety } : {}),
         estimatedHarvestDate: formatDateLocal(estimate),
       }
     }

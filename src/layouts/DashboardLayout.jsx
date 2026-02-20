@@ -25,6 +25,8 @@ import ConfirmDialog from '../components/ConfirmDialog/ConfirmDialog'
 import './DashboardLayout.css'
 
 const SIDEBAR_PREF_KEY = 'ikape_farmer_sidebar_collapsed'
+const NOTIFICATION_VIEWED_KEY_PREFIX = 'ikape_farmer_notifications_viewed'
+const NOTIFICATION_CLEARED_KEY_PREFIX = 'ikape_farmer_notifications_cleared'
 const FARMER_MAIN_NAV_ITEMS = [
   { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/harvest', icon: BarChart3, label: 'Harvest Records' },
@@ -41,10 +43,16 @@ export default function DashboardLayout() {
   const isClusterRoute = location.pathname.startsWith('/clusters/')
   const searchContainerRef = useRef(null)
   const profileMenuRef = useRef(null)
+  const notificationMenuRef = useRef(null)
   const [logoutConfirm, setLogoutConfirm] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [showAllNotifications, setShowAllNotifications] = useState(false)
+  const [viewedNotificationIds, setViewedNotificationIds] = useState([])
+  const [clearedNotificationIds, setClearedNotificationIds] = useState([])
+  const [notificationPrefsHydrated, setNotificationPrefsHydrated] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_PREF_KEY) === 'true'
@@ -86,6 +94,7 @@ export default function DashboardLayout() {
     const handleOutsideClick = (event) => {
       const clickedInsideSearch = searchContainerRef.current?.contains(event.target)
       const clickedInsideProfile = profileMenuRef.current?.contains(event.target)
+      const clickedInsideNotifications = notificationMenuRef.current?.contains(event.target)
 
       if (!clickedInsideSearch) {
         setIsSearchOpen(false)
@@ -93,6 +102,11 @@ export default function DashboardLayout() {
 
       if (!clickedInsideProfile) {
         setShowProfileMenu(false)
+      }
+
+      if (!clickedInsideNotifications) {
+        setShowNotifications(false)
+        setShowAllNotifications(false)
       }
     }
 
@@ -102,7 +116,178 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     setShowProfileMenu(false)
+    setShowNotifications(false)
+    setShowAllNotifications(false)
   }, [location.pathname])
+
+  const rawNotifications = useMemo(() => {
+    const items = []
+
+    if (!farm?.farm_name || farm.farm_name === 'My Farm') {
+      items.push({
+        id: 'farm-register',
+        title: 'Farm details are incomplete',
+        detail: 'Register your farm details to unlock complete tracking.',
+      })
+    }
+
+    if ((clusters || []).length === 0) {
+      items.push({
+        id: 'clusters-empty',
+        title: 'No clusters added yet',
+        detail: 'Add your first cluster to start recording growth and harvest data.',
+      })
+    } else {
+      items.push({
+        id: `clusters-total-${clusters.length}`,
+        title: `${clusters.length} cluster(s) in your farm`,
+        detail: 'Keep records updated for better recommendations.',
+      })
+    }
+
+    const harvestReadyClusters = (clusters || []).filter((cluster) => cluster.plantStage === 'ready-to-harvest')
+    if (harvestReadyClusters.length > 0) {
+      items.push({
+        id: `harvest-ready-${harvestReadyClusters.length}`,
+        title: `${harvestReadyClusters.length} cluster(s) ready to harvest`,
+        detail: 'Open Harvest to update actual yield and quality records.',
+      })
+    }
+
+    ;(clusters || [])
+      .filter((cluster) => cluster.plantStage === 'flowering')
+      .forEach((cluster) => {
+        const estimatedFlowering = cluster?.stageData?.estimatedFloweringDate
+        items.push({
+          id: `flowering-${cluster.id}-${estimatedFlowering || 'pending'}`,
+          title: `${cluster.clusterName} is in flowering stage`,
+          detail: estimatedFlowering
+            ? `Estimated flowering date: ${estimatedFlowering}`
+            : 'Set estimated and actual flowering dates in Overview.',
+        })
+      })
+
+    return items
+  }, [clusters, farm])
+
+  const notificationViewedKey = user?.id
+    ? `${NOTIFICATION_VIEWED_KEY_PREFIX}:${user.id}`
+    : `${NOTIFICATION_VIEWED_KEY_PREFIX}:guest`
+  const notificationClearedKey = user?.id
+    ? `${NOTIFICATION_CLEARED_KEY_PREFIX}:${user.id}`
+    : `${NOTIFICATION_CLEARED_KEY_PREFIX}:guest`
+  const guestNotificationViewedKey = `${NOTIFICATION_VIEWED_KEY_PREFIX}:guest`
+  const guestNotificationClearedKey = `${NOTIFICATION_CLEARED_KEY_PREFIX}:guest`
+
+  useEffect(() => {
+    setNotificationPrefsHydrated(false)
+
+    try {
+      const savedViewed = localStorage.getItem(notificationViewedKey)
+      let parsedViewed = savedViewed ? JSON.parse(savedViewed) : []
+
+      if (user?.id && (!Array.isArray(parsedViewed) || parsedViewed.length === 0)) {
+        const guestViewed = localStorage.getItem(guestNotificationViewedKey)
+        const parsedGuestViewed = guestViewed ? JSON.parse(guestViewed) : []
+        if (Array.isArray(parsedGuestViewed) && parsedGuestViewed.length > 0) {
+          parsedViewed = parsedGuestViewed
+        }
+      }
+
+      setViewedNotificationIds(Array.isArray(parsedViewed) ? parsedViewed : [])
+    } catch {
+      setViewedNotificationIds([])
+    }
+
+    try {
+      const savedCleared = localStorage.getItem(notificationClearedKey)
+      let parsedCleared = savedCleared ? JSON.parse(savedCleared) : []
+
+      if (user?.id && (!Array.isArray(parsedCleared) || parsedCleared.length === 0)) {
+        const guestCleared = localStorage.getItem(guestNotificationClearedKey)
+        const parsedGuestCleared = guestCleared ? JSON.parse(guestCleared) : []
+        if (Array.isArray(parsedGuestCleared) && parsedGuestCleared.length > 0) {
+          parsedCleared = parsedGuestCleared
+        }
+      }
+
+      setClearedNotificationIds(Array.isArray(parsedCleared) ? parsedCleared : [])
+    } catch {
+      setClearedNotificationIds([])
+    }
+
+    setNotificationPrefsHydrated(true)
+  }, [
+    guestNotificationClearedKey,
+    guestNotificationViewedKey,
+    notificationClearedKey,
+    notificationViewedKey,
+    user?.id,
+  ])
+
+  useEffect(() => {
+    if (!notificationPrefsHydrated) return
+
+    try {
+      localStorage.setItem(notificationViewedKey, JSON.stringify(viewedNotificationIds))
+    } catch {
+      // Ignore storage write errors in restricted browser contexts.
+    }
+  }, [notificationPrefsHydrated, notificationViewedKey, viewedNotificationIds])
+
+  useEffect(() => {
+    if (!notificationPrefsHydrated) return
+
+    try {
+      localStorage.setItem(notificationClearedKey, JSON.stringify(clearedNotificationIds))
+    } catch {
+      // Ignore storage write errors in restricted browser contexts.
+    }
+  }, [clearedNotificationIds, notificationClearedKey, notificationPrefsHydrated])
+
+  const notifications = useMemo(
+    () => rawNotifications.filter((item) => !clearedNotificationIds.includes(item.id)),
+    [rawNotifications, clearedNotificationIds]
+  )
+
+  const unreadNotificationCount = useMemo(
+    () =>
+      notificationPrefsHydrated
+        ? notifications.filter((item) => !viewedNotificationIds.includes(item.id)).length
+        : 0,
+    [notificationPrefsHydrated, notifications, viewedNotificationIds]
+  )
+
+  const displayedNotifications = showAllNotifications ? notifications : notifications.slice(0, 3)
+
+  const markNotificationsAsViewed = () => {
+    setViewedNotificationIds((prev) => {
+      const merged = new Set([...prev, ...notifications.map((item) => item.id)])
+      return [...merged]
+    })
+  }
+
+  const handleToggleNotifications = () => {
+    setShowNotifications((prev) => {
+      const willOpen = !prev
+      if (willOpen) {
+        markNotificationsAsViewed()
+      }
+      if (!willOpen) {
+        setShowAllNotifications(false)
+      }
+      return willOpen
+    })
+  }
+
+  const handleClearNotifications = () => {
+    if (notifications.length === 0) return
+
+    const idsToClear = notifications.map((item) => item.id)
+    setClearedNotificationIds((prev) => [...new Set([...prev, ...idsToClear])])
+    setViewedNotificationIds((prev) => [...new Set([...prev, ...idsToClear])])
+    setShowAllNotifications(false)
+  }
 
   const handleLogout = async () => {
     await logout()
@@ -120,7 +305,7 @@ export default function DashboardLayout() {
     : []
 
   const navItems = isClusterRoute ? clusterNavItems : FARMER_MAIN_NAV_ITEMS
-  const mobileNavItems = FARMER_MAIN_NAV_ITEMS
+  const mobileNavItems = navItems
   const normalizedSearch = searchQuery.trim().toLowerCase()
 
   const searchResults = useMemo(() => {
@@ -294,9 +479,60 @@ export default function DashboardLayout() {
             )}
           </div>
           <div className="topbar-right">
-            <button className="topbar-icon-btn">
-              <Bell size={20} />
-            </button>
+            <div className="notification-menu" ref={notificationMenuRef}>
+              <button
+                type="button"
+                className="topbar-icon-btn notification-trigger"
+                onClick={handleToggleNotifications}
+                aria-haspopup="menu"
+                aria-expanded={showNotifications}
+                aria-label="Notifications"
+              >
+                <Bell size={20} />
+                {unreadNotificationCount > 0 && (
+                  <span className="notification-badge">{Math.min(unreadNotificationCount, 99)}</span>
+                )}
+              </button>
+              {showNotifications && (
+                <div className="notification-dropdown" role="menu" aria-label="Notifications">
+                  <div className="notification-header">
+                    <h4>Notifications</h4>
+                    <div className="notification-header-actions">
+                      <span>{unreadNotificationCount > 0 ? `${unreadNotificationCount} new` : 'All caught up'}</span>
+                      <button
+                        type="button"
+                        className="notification-clear-btn"
+                        onClick={handleClearNotifications}
+                        disabled={notifications.length === 0}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  {displayedNotifications.length === 0 ? (
+                    <div className="notification-empty">No notifications available.</div>
+                  ) : (
+                    <div className="notification-list">
+                      {displayedNotifications.map((item) => (
+                        <div key={item.id} className="notification-item">
+                          <span className="notification-item-title">{item.title}</span>
+                          <span className="notification-item-detail">{item.detail}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {notifications.length > 3 && (
+                    <button
+                      type="button"
+                      className="notification-view-more"
+                      onClick={() => setShowAllNotifications((prev) => !prev)}
+                    >
+                      {showAllNotifications ? 'Show less' : 'View more'}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="user-menu" ref={profileMenuRef}>
               <button
                 type="button"
@@ -364,8 +600,8 @@ export default function DashboardLayout() {
         isOpen={logoutConfirm}
         onClose={() => setLogoutConfirm(false)}
         onConfirm={handleLogout}
-        title="Confirm Logout"
-        message="Are you sure you want to log out? You will need to log in again to access your account."
+        title="Log out of your account?"
+        message="Your current session will end on this device."
         confirmText="Log Out"
         cancelText="Cancel"
         variant="warning"

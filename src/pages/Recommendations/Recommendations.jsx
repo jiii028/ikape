@@ -208,8 +208,8 @@ export default function Recommendations() {
     <div className="reco-page">
       <div className="reco-header">
         <div>
-          <h1>Decision Support & Recommendations</h1>
-          <p>Actionable insights to improve yield and farm management</p>
+          <h1>Recommendations</h1>
+          <p>Priority actions by cluster</p>
         </div>
         <div className="harvest-filters">
           <div className="filter-select">
@@ -248,14 +248,14 @@ export default function Recommendations() {
           <AlertTriangle size={20} />
           <div>
             <span className="reco-sum-value">{moderateCount}</span>
-            <span className="reco-sum-label">Moderate Issues</span>
+            <span className="reco-sum-label">Needs Work</span>
           </div>
         </div>
         <div className="reco-sum-card reco-sum-card--good">
           <CheckCircle size={20} />
           <div>
             <span className="reco-sum-value">{goodCount}</span>
-            <span className="reco-sum-label">Performing Well</span>
+            <span className="reco-sum-label">Stable</span>
           </div>
         </div>
       </div>

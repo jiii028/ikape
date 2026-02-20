@@ -186,7 +186,6 @@
 
 .stat-card:hover {
   box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
 }
 
 .stat-icon {
@@ -198,10 +197,10 @@
   justify-content: center;
 }
 
-.stat-card--farms .stat-icon { background: #dcfce7; color: var(--primary); }
-.stat-card--clusters .stat-icon { background: #e0f2fe; color: #0284c7; }
-.stat-card--trees .stat-icon { background: #fef9c3; color: #ca8a04; }
-.stat-card--harvest .stat-icon { background: #fce7f3; color: #db2777; }
+.stat-card--farms .stat-icon { background: #eef3ef; color: var(--primary); }
+.stat-card--clusters .stat-icon { background: #eef3ef; color: var(--primary-dark); }
+.stat-card--trees .stat-icon { background: #eef3ef; color: var(--primary-light); }
+.stat-card--harvest .stat-icon { background: #eef3ef; color: var(--primary-dark); }
 
 .stat-info {
   display: flex;
@@ -337,7 +336,6 @@
 .farm-card:hover {
   box-shadow: var(--shadow-md);
   border-color: var(--primary);
-  transform: translateY(-2px);
 }
 
 .farm-card-header {
@@ -395,7 +393,7 @@
 .cluster-badge {
   font-size: 12px;
   padding: 4px 10px;
-  background: #dcfce7;
+  background: #eef3ef;
   color: var(--primary);
   border-radius: 20px;
   font-weight: 500;
@@ -407,8 +405,8 @@
   gap: 4px;
   font-size: 12px;
   padding: 4px 10px;
-  background: #fef3c7;
-  color: #b45309;
+  background: #eef3ef;
+  color: var(--primary-dark);
   border-radius: 20px;
   font-weight: 500;
 }
