@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../context/AuthContext'
 import { getCached, setCached } from '../../lib/queryCache'
 import { fetchOverview } from '../../api/analytics'
 import { getBatchPredictions } from '../../api/predict'
@@ -93,6 +94,23 @@ function pickLatestStageData(stageData) {
     })[0]
 }
 
+function getFarmRelationRecord(farmsRelation) {
+    if (!farmsRelation) return null
+    if (Array.isArray(farmsRelation)) return farmsRelation[0] || null
+    return farmsRelation
+}
+
+function getNotificationErrorMessage(error) {
+    const raw = error?.message || 'Unknown error'
+    const normalized = raw.toLowerCase()
+
+    if (normalized.includes('farmer_notifications') && normalized.includes('schema cache')) {
+        return 'Notifications table is not ready in Supabase API yet. Run create_farmer_notifications.sql, then execute: select pg_notify(\'pgrst\', \'reload schema\');'
+    }
+
+    return raw
+}
+
 function mapClusterToModelFeatures(cluster) {
     const sd = cluster?.stageData || {}
     return {
@@ -120,6 +138,7 @@ function mapClusterToModelFeatures(cluster) {
 }
 
 export default function AdminDashboard() {
+    const { user } = useAuth()
     const [searchParams] = useSearchParams()
     const [stats, setStats] = useState({
         totalFarmers: 0,
@@ -143,8 +162,8 @@ export default function AdminDashboard() {
 
     // Dialog states
     const [bulkActionDialog, setBulkActionDialog] = useState({ open: false, action: '', count: 0 })
-    const [assignDialog, setAssignDialog] = useState({ open: false, clusterName: '' })
-    const [notifyDialog, setNotifyDialog] = useState({ open: false, clusterName: '' })
+    const [assignDialog, setAssignDialog] = useState({ open: false, clusterName: '', farm: null })
+    const [notifyDialog, setNotifyDialog] = useState({ open: false, clusterName: '', farm: null })
     const [exportDialog, setExportDialog] = useState(false)
 
 
@@ -210,6 +229,11 @@ export default function AdminDashboard() {
 
             const users = usersRes.data || []
             const farms = farmsRes.data || []
+            const farmUserIdByFarmId = new Map(
+                farms
+                    .filter((farm) => farm?.id)
+                    .map((farm) => [farm.id, farm.user_id || null])
+            )
             const clusters = (clustersRes.data || []).map((c) => ({
                 ...c,
                 stageData: pickLatestStageData(c.cluster_stage_data),
@@ -358,10 +382,14 @@ export default function AdminDashboard() {
                 if (defectCount >= 20) priority = Math.max(priority, defectCount >= 40 ? 3 : 2)
 
                 const risk = priority >= 4 ? 'Critical' : priority === 3 ? 'High' : priority === 2 ? 'Moderate' : 'Low'
+                const farmRelation = getFarmRelationRecord(c.farms)
+                const resolvedFarmerUserId = farmRelation?.user_id || farmUserIdByFarmId.get(c.farm_id) || null
 
                 return {
                     id: c.id,
-                    farmName: c.farms?.farm_name || 'Unknown Farm',
+                    farmName: farmRelation?.farm_name || 'Unknown Farm',
+                    farmerUserId: resolvedFarmerUserId,
+                    farmId: c.farm_id || null,
                     clusterName: c.cluster_name,
                     riskLevel: risk,
                     yieldDecline: Number.isFinite(decline) ? parseFloat(decline.toFixed(1)) : 0,
@@ -489,21 +517,100 @@ export default function AdminDashboard() {
     }
 
     const handleAssign = (farm) => {
-        setAssignDialog({ open: true, clusterName: farm.clusterName })
+        setAssignDialog({
+            open: true,
+            clusterName: farm.clusterName,
+            farm,
+        })
     }
 
-    const doAssign = () => {
-        addAuditLog(`Assigned task for: ${assignDialog.clusterName}`)
-        setAssignDialog({ open: false, clusterName: '' })
+    const createFarmerNotification = async (farm, type) => {
+        let recipientUserId = farm?.farmerUserId || null
+
+        if (!recipientUserId && farm?.farmId) {
+            const { data: farmRow, error: farmLookupError } = await supabase
+                .from('farms')
+                .select('user_id')
+                .eq('id', farm.farmId)
+                .maybeSingle()
+
+            if (farmLookupError) {
+                throw farmLookupError
+            }
+
+            recipientUserId = farmRow?.user_id || null
+        }
+
+        if (!recipientUserId) {
+            throw new Error('Farmer account is missing for this cluster.')
+        }
+
+        const actionLabel = type === 'assign' ? 'Task assigned' : 'Immediate action needed'
+        const riskContext = farm?.riskLevel ? ` (Risk: ${farm.riskLevel})` : ''
+        const title = `${actionLabel} for ${farm.clusterName}`
+        const message = type === 'assign'
+            ? `Admin assigned a task for cluster "${farm.clusterName}"${riskContext}. Please review Recommendations and update your cluster records.`
+            : `Admin sent an urgent notification for cluster "${farm.clusterName}"${riskContext}. Please review your cluster status and take action.`
+
+        const { error } = await supabase
+            .from('farmer_notifications')
+            .insert({
+                recipient_user_id: recipientUserId,
+                actor_user_id: user?.id || null,
+                cluster_id: farm.id,
+                farm_id: farm.farmId,
+                notification_type: type,
+                title,
+                message,
+                metadata: {
+                    cluster_name: farm.clusterName,
+                    farm_name: farm.farmName,
+                    risk_level: farm.riskLevel,
+                    priority_score: farm.priorityScore,
+                },
+            })
+
+        if (error) {
+            throw error
+        }
+    }
+
+    const doAssign = async () => {
+        const targetFarm = assignDialog.farm
+        try {
+            await createFarmerNotification(targetFarm, 'assign')
+            addAuditLog(`Assigned task and notified farmer for: ${assignDialog.clusterName}`)
+            window.alert(`Notification sent successfully to farmer for cluster: ${assignDialog.clusterName}`)
+        } catch (error) {
+            console.error('Error notifying farmer on assign:', error)
+            addAuditLog(`Assign failed for: ${assignDialog.clusterName}`)
+            window.alert(`Failed to notify farmer: ${getNotificationErrorMessage(error)}`)
+        } finally {
+            setAssignDialog({ open: false, clusterName: '', farm: null })
+        }
     }
 
     const handleNotify = (farm) => {
-        setNotifyDialog({ open: true, clusterName: farm.clusterName })
+        setNotifyDialog({
+            open: true,
+            clusterName: farm.clusterName,
+            farm,
+        })
     }
 
-    const doNotify = () => {
-        addAuditLog(`Notified farmer for: ${notifyDialog.clusterName}`)
-        setNotifyDialog({ open: false, clusterName: '' })
+    const doNotify = async () => {
+        const targetFarm = notifyDialog.farm
+        try {
+            await createFarmerNotification(targetFarm, 'notify')
+            addAuditLog(`Notified farmer for: ${notifyDialog.clusterName}`)
+            window.alert(`Notification sent successfully to farmer for cluster: ${notifyDialog.clusterName}`)
+        } catch (error) {
+            console.error('Error notifying farmer:', error)
+            addAuditLog(`Notify failed for: ${notifyDialog.clusterName}`)
+            window.alert(`Failed to notify farmer: ${getNotificationErrorMessage(error)}`)
+        } finally {
+            setNotifyDialog({ open: false, clusterName: '', farm: null })
+        }
     }
 
     const handleExportReport = () => {
@@ -984,7 +1091,7 @@ export default function AdminDashboard() {
             {/* Assign Task Confirmation Dialog */}
             <ConfirmDialog
                 isOpen={assignDialog.open}
-                onClose={() => setAssignDialog({ open: false, clusterName: '' })}
+                onClose={() => setAssignDialog({ open: false, clusterName: '', farm: null })}
                 onConfirm={doAssign}
                 title="Assign Task"
                 message={`Assign a task for cluster "${assignDialog.clusterName}"?`}
@@ -996,7 +1103,7 @@ export default function AdminDashboard() {
             {/* Notify Farmer Confirmation Dialog */}
             <ConfirmDialog
                 isOpen={notifyDialog.open}
-                onClose={() => setNotifyDialog({ open: false, clusterName: '' })}
+                onClose={() => setNotifyDialog({ open: false, clusterName: '', farm: null })}
                 onConfirm={doNotify}
                 title="Notify Farmer"
                 message={`Send a notification to the farmer for cluster "${notifyDialog.clusterName}"?`}

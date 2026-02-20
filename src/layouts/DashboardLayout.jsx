@@ -2,6 +2,7 @@ import { Outlet, NavLink, useLocation, useNavigate, useParams } from 'react-rout
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useFarm } from '../context/FarmContext'
+import { supabase } from '../lib/supabase'
 import {
   LayoutDashboard,
   BarChart3,
@@ -50,6 +51,7 @@ export default function DashboardLayout() {
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [showAllNotifications, setShowAllNotifications] = useState(false)
+  const [serverNotifications, setServerNotifications] = useState([])
   const [viewedNotificationIds, setViewedNotificationIds] = useState([])
   const [clearedNotificationIds, setClearedNotificationIds] = useState([])
   const [notificationPrefsHydrated, setNotificationPrefsHydrated] = useState(false)
@@ -120,8 +122,60 @@ export default function DashboardLayout() {
     setShowAllNotifications(false)
   }, [location.pathname])
 
+  useEffect(() => {
+    let active = true
+
+    const loadServerNotifications = async () => {
+      if (!user?.id) {
+        if (active) setServerNotifications([])
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('farmer_notifications')
+        .select('id, title, message, created_at, cluster_id, notification_type')
+        .eq('recipient_user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (!active) return
+
+      if (error) {
+        console.error('Error loading farmer notifications:', error.message)
+        setServerNotifications([])
+        return
+      }
+
+      const mapped = (data || []).map((item) => {
+        const createdAtLabel = item.created_at ? new Date(item.created_at).toLocaleString() : ''
+        const detailParts = [item.message]
+        if (createdAtLabel) detailParts.push(createdAtLabel)
+
+        return {
+          id: `admin-${item.id}`,
+          title: item.title || 'New admin notification',
+          detail: detailParts.filter(Boolean).join(' • '),
+          source: 'admin',
+          clusterId: item.cluster_id,
+          type: item.notification_type,
+        }
+      })
+
+      setServerNotifications(mapped)
+    }
+
+    loadServerNotifications()
+    return () => {
+      active = false
+    }
+  }, [user?.id])
+
   const rawNotifications = useMemo(() => {
     const items = []
+
+    if (serverNotifications.length > 0) {
+      items.push(...serverNotifications)
+    }
 
     if (!farm?.farm_name || farm.farm_name === 'My Farm') {
       items.push({
@@ -168,7 +222,7 @@ export default function DashboardLayout() {
       })
 
     return items
-  }, [clusters, farm])
+  }, [clusters, farm, serverNotifications])
 
   const notificationViewedKey = user?.id
     ? `${NOTIFICATION_VIEWED_KEY_PREFIX}:${user.id}`

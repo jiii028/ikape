@@ -33,6 +33,7 @@ Run these in Supabase SQL Editor when setting up/updating DB triggers:
 
 - `sync_plant_count_to_stage_data.sql`
 - `sync_agriclimatic_admin_to_cluster_stage_data.sql`
+- `create_farmer_notifications.sql`
 
 ## ML Model API (Final Trained Models)
 
