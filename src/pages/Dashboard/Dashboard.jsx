@@ -85,10 +85,10 @@ export default function Dashboard() {
         <div className="farm-info-prompt">
           <div className="farm-info-prompt-content">
             <Leaf size={40} />
-            <h3>Register Your Farm</h3>
-            <p>Start by registering your farm details to begin managing clusters and tracking harvests.</p>
+            <h3>Add Farm Details</h3>
+            <p>Add your farm details to start managing clusters and harvest records.</p>
             <button className="btn-primary" onClick={() => setShowFarmForm(true)}>
-              <Plus size={18} /> Register Farm Details
+              <Plus size={18} /> Add Farm
             </button>
           </div>
         </div>
@@ -172,11 +172,11 @@ export default function Dashboard() {
           <div className="empty-illustration">
             <Leaf size={64} />
           </div>
-          <h3>No Clusters Added Yet</h3>
-          <p>Start by adding your first cluster to manage your plants and track harvests.</p>
+          <h3>No Clusters Yet</h3>
+          <p>Add your first cluster to begin tracking.</p>
           <button className="btn-primary" onClick={() => setShowClusterForm(true)}>
             <Plus size={18} />
-            Add Your First Cluster
+            Add Cluster
           </button>
         </div>
       ) : (

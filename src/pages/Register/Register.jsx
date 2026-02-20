@@ -282,7 +282,7 @@ export default function Register() {
             <img src="/logo.png" alt="IKAPE logo" className="auth-logo-image" />
           </div>
           <h1>IKAPE</h1>
-          <p>Coffee Farm Management System</p>
+          <p>Coffee farm workspace</p>
         </div>
         <div className="auth-illustration">
           <div className="leaf leaf-1" aria-hidden="true"><Leaf /></div>
@@ -296,7 +296,7 @@ export default function Register() {
         <div className="auth-form-container register-form-container">
           <div className="register-header">
             <h2>Create Account</h2>
-            <p className="auth-subtitle register-subtitle">Register to start managing your coffee farm</p>
+            <p className="auth-subtitle register-subtitle">Create your farm account</p>
           </div>
 
           {error && <div className="auth-error">{error}</div>}
@@ -516,7 +516,7 @@ export default function Register() {
             </div>
             <h3>Account Created</h3>
             <p>{redirectMessage}</p>
-            <span className="register-redirect-caption">Redirecting to login for authentication...</span>
+            <span className="register-redirect-caption">Redirecting to login...</span>
             <button
               type="button"
               className="register-redirect-btn"

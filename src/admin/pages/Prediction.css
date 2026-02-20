@@ -236,6 +236,31 @@
     background: #fafbfc;
 }
 
+.prediction-cluster-chart-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.prediction-cluster-chart-card h5 {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 2px;
+}
+
+.prediction-cluster-chart-card p {
+    font-size: 12px;
+    color: #64748b;
+    margin-bottom: 10px;
+}
+
+.prediction-cluster-chart-wrap {
+    width: 100%;
+}
+
 .prediction-cluster-table {
     width: 100%;
     border-collapse: collapse;
@@ -365,6 +390,11 @@
 
     .prediction-farm-expanded {
         padding: 10px;
+    }
+
+    .prediction-cluster-chart-card {
+        padding: 10px;
+        margin-bottom: 10px;
     }
 
     .prediction-cluster-table {

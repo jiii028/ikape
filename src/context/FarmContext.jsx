@@ -220,6 +220,21 @@ export function FarmProvider({ children }) {
     }
 
     const basicFields = {}
+    const hasStageDataVariety =
+      updates.stageData && Object.prototype.hasOwnProperty.call(updates.stageData, 'variety')
+    const hasExplicitVariety = Object.prototype.hasOwnProperty.call(updates, 'variety')
+    const incomingVariety = hasExplicitVariety
+      ? updates.variety
+      : hasStageDataVariety
+        ? updates.stageData.variety
+        : undefined
+    const normalizedIncomingVariety =
+      typeof incomingVariety === 'string' ? incomingVariety.trim() : incomingVariety
+    const shouldSyncVariety = incomingVariety !== undefined
+    const resolvedVariety =
+      shouldSyncVariety && normalizedIncomingVariety
+        ? normalizedIncomingVariety
+        : currentCluster.variety || null
     if (updates.clusterName !== undefined) basicFields.cluster_name = updates.clusterName
     if (updates.areaSize !== undefined) {
       const parsedArea = Number.parseFloat(updates.areaSize)
@@ -230,8 +245,8 @@ export function FarmProvider({ children }) {
       basicFields.plant_count = Number.isInteger(parsedPlantCount) ? parsedPlantCount : null
     }
     if (updates.plantStage !== undefined) basicFields.plant_stage = updates.plantStage
-    if (updates.stageData && Object.prototype.hasOwnProperty.call(updates.stageData, 'variety')) {
-      basicFields.variety = updates.stageData.variety || null
+    if (shouldSyncVariety) {
+      basicFields.variety = resolvedVariety
     }
 
     if (Object.keys(basicFields).length > 0) {
@@ -368,16 +383,24 @@ export function FarmProvider({ children }) {
               }
             : undefined
 
+        const stageDataWithVariety =
+          shouldSyncVariety
+            ? {
+                ...((localStageData !== undefined ? localStageData : c.stageData) || {}),
+                variety: resolvedVariety || '',
+              }
+            : localStageData
+
         return {
           ...c,
           ...(updates.clusterName !== undefined && { clusterName: updates.clusterName }),
           ...(updates.areaSize !== undefined && { areaSize: updates.areaSize }),
           ...(updates.plantCount !== undefined && { plantCount: updates.plantCount }),
           ...(updates.plantStage !== undefined && { plantStage: updates.plantStage }),
-          ...(updates.stageData && Object.prototype.hasOwnProperty.call(updates.stageData, 'variety')
-            ? { variety: updates.stageData.variety || null }
+          ...(shouldSyncVariety
+            ? { variety: resolvedVariety || '' }
             : {}),
-          ...(localStageData !== undefined && { stageData: localStageData }),
+          ...(stageDataWithVariety !== undefined && { stageData: stageDataWithVariety }),
         }
       })
       persistFarmSnapshot(farm, next)
@@ -493,12 +516,17 @@ function mapClusterFromDb(row, stageDataOverride = null) {
     : []
   const latestHarvest = harvestRecords[0] || null
 
+  const rowVariety = row.variety || ''
+  const overrideVariety =
+    stageDataOverride && Object.prototype.hasOwnProperty.call(stageDataOverride, 'variety')
+      ? stageDataOverride.variety
+      : undefined
+  const normalizedOverrideVariety =
+    typeof overrideVariety === 'string' ? overrideVariety.trim() : overrideVariety
+
   const mergedStageData = {
     ...(stageDataOverride || {}),
-    variety:
-      stageDataOverride && Object.prototype.hasOwnProperty.call(stageDataOverride, 'variety')
-        ? stageDataOverride.variety
-        : row.variety || '',
+    variety: normalizedOverrideVariety || rowVariety,
   }
 
   if (latestHarvest) {
@@ -561,8 +589,6 @@ function mapStageDataFromDb(row) {
   return {
     datePlanted: row.date_planted || '',
     numberOfPlants: row.number_of_plants ?? '',
-    // Variety is stored in clusters.variety and merged in mapClusterFromDb.
-    variety: '',
     fertilizerFrequency: fromFrequencyEnum(row.fertilizer_frequency),
     fertilizerType: fromTypeEnum(row.fertilizer_type),
     pesticideType: fromTypeEnum(row.pesticide_type),

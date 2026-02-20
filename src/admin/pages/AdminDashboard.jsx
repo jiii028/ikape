@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { getCached, setCached } from '../../lib/queryCache'
 import { fetchOverview } from '../../api/analytics'
+import { getBatchPredictions } from '../../api/predict'
 import {
     Users,
     Sprout,
@@ -25,13 +26,13 @@ import {
 import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-    ResponsiveContainer, PieChart, Pie, Cell,
+    ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar,
 } from 'recharts'
 import './AdminDashboard.css'
 
 const RISK_COLORS = { Low: '#22c55e', Moderate: '#f59e0b', High: '#f97316', Critical: '#ef4444' }
 const GRADE_COLORS = ['#22c55e', '#3b82f6', '#f59e0b']
-const ADMIN_DASHBOARD_CACHE_KEY = 'admin_dashboard:overview'
+const ADMIN_DASHBOARD_CACHE_KEY = 'admin_dashboard:overview:v3'
 const ADMIN_DASHBOARD_CACHE_TTL_MS = 2 * 60 * 1000
 
 const INTERVENTION_BY_RISK = {
@@ -64,6 +65,38 @@ const INTERVENTION_BY_RISK = {
     },
 }
 
+function toNumber(value, fallback = 0) {
+    if (value === '' || value === null || value === undefined) return fallback
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function mapClusterToModelFeatures(cluster) {
+    const sd = cluster?.stageData || {}
+    return {
+        plant_age_months: toNumber(sd.plant_age_months ?? sd.plantAgeMonths),
+        number_of_plants: toNumber(sd.number_of_plants ?? cluster?.plant_count),
+        fertilizer_type: sd.fertilizer_type ?? sd.fertilizerType ?? '',
+        fertilizer_frequency: sd.fertilizer_frequency ?? sd.fertilizerFrequency ?? '',
+        pesticide_type: sd.pesticide_type ?? sd.pesticideType ?? '',
+        pesticide_frequency: sd.pesticide_frequency ?? sd.pesticideFrequency ?? '',
+        pruning_interval_months: toNumber(sd.pruning_interval_months ?? sd.pruningIntervalMonths),
+        shade_tree_present: sd.shade_tree_present ?? sd.shadeTrees ?? '',
+        soil_ph: toNumber(sd.soil_ph ?? sd.soilPh),
+        avg_temp_c: toNumber(sd.avg_temp_c ?? sd.monthly_temperature ?? sd.monthlyTemperature),
+        avg_rainfall_mm: toNumber(sd.avg_rainfall_mm ?? sd.rainfall),
+        avg_humidity_pct: toNumber(sd.avg_humidity_pct ?? sd.humidity),
+        pre_total_trees: toNumber(sd.pre_total_trees ?? sd.preTotalTrees ?? cluster?.plant_count),
+        pre_yield_kg: toNumber(sd.pre_yield_kg ?? sd.preYieldKg ?? sd.previous_yield ?? sd.previousYield),
+        pre_grade_fine: toNumber(sd.pre_grade_fine ?? sd.preGradeFine),
+        pre_grade_premium: toNumber(sd.pre_grade_premium ?? sd.preGradePremium),
+        pre_grade_commercial: toNumber(sd.pre_grade_commercial ?? sd.preGradeCommercial),
+        previous_fine_pct: toNumber(sd.previous_fine_pct ?? sd.grade_fine ?? sd.gradeFine),
+        previous_premium_pct: toNumber(sd.previous_premium_pct ?? sd.grade_premium ?? sd.gradePremium),
+        previous_commercial_pct: toNumber(sd.previous_commercial_pct ?? sd.grade_commercial ?? sd.gradeCommercial),
+    }
+}
+
 export default function AdminDashboard() {
     const [searchParams] = useSearchParams()
     const [stats, setStats] = useState({
@@ -77,6 +110,8 @@ export default function AdminDashboard() {
     const [criticalFarms, setCriticalFarms] = useState([])
     const [yieldTrend, setYieldTrend] = useState([])
     const [gradeDistribution, setGradeDistribution] = useState([])
+    const [overallOutputData, setOverallOutputData] = useState([])
+    const [stageOutputData, setStageOutputData] = useState([])
     const [selectedCluster, setSelectedCluster] = useState(null)
     const [auditLogs, setAuditLogs] = useState([])
     const [sortField, setSortField] = useState('riskLevel')
@@ -131,6 +166,8 @@ export default function AdminDashboard() {
             setCriticalFarms(cached.criticalFarms)
             setYieldTrend(cached.yieldTrend)
             setGradeDistribution(cached.gradeDistribution)
+            setOverallOutputData(cached.overallOutputData || [])
+            setStageOutputData(cached.stageOutputData || [])
             setAuditLogs(cached.auditLogs)
             setLoading(false)
         } else {
@@ -157,6 +194,7 @@ export default function AdminDashboard() {
             }))
             const harvests = harvestsRes.data || []
             const clusterActualYieldMap = new Map()
+            const predictionByClusterId = new Map()
 
             harvests.forEach((record) => {
                 const clusterId = record.cluster_id
@@ -164,6 +202,30 @@ export default function AdminDashboard() {
                 const nextTotal = (clusterActualYieldMap.get(clusterId) || 0) + parseFloat(record.yield_kg || 0)
                 clusterActualYieldMap.set(clusterId, nextTotal)
             })
+
+            try {
+                const samples = clusters.map((cluster) => ({
+                    id: String(cluster.id),
+                    features: mapClusterToModelFeatures(cluster),
+                }))
+                if (samples.length > 0) {
+                    const batchResult = await getBatchPredictions(samples)
+                    ;(batchResult?.predictions || []).forEach((item) => {
+                        if (item?.id === undefined || !item?.prediction) return
+                        predictionByClusterId.set(String(item.id), item.prediction)
+                    })
+                }
+            } catch (predictionError) {
+                console.warn('Model API unavailable for dashboard, using stored predicted values:', predictionError)
+            }
+
+            const getPredictedForCluster = (cluster) => {
+                const modelPrediction = predictionByClusterId.get(String(cluster.id))
+                if (modelPrediction && Number.isFinite(Number(modelPrediction.yield_kg))) {
+                    return Number(modelPrediction.yield_kg)
+                }
+                return toNumber(cluster?.stageData?.predicted_yield ?? cluster?.stageData?.predictedYield)
+            }
 
             // Compute stats
             const totalFarmers = users.length
@@ -179,7 +241,7 @@ export default function AdminDashboard() {
             clusters.forEach((c) => {
                 const sd = c.stageData
                 if (sd) {
-                    predictedYield += parseFloat(sd.predicted_yield || 0)
+                    predictedYield += getPredictedForCluster(c)
                     actualYield += clusterActualYieldMap.get(c.id) || parseFloat(sd.current_yield || 0)
                     previousYield += parseFloat((sd.pre_yield_kg ?? sd.previous_yield) || 0)
                 }
@@ -221,6 +283,15 @@ export default function AdminDashboard() {
                 if (!seasonMap[season]) seasonMap[season] = { predicted: 0, actual: 0 }
                 seasonMap[season].actual += parseFloat(h.yield_kg || 0)
             })
+
+            clusters.forEach((c) => {
+                const sd = c.stageData
+                if (!sd) return
+                const season = sd.season || sd.harvest_season || sd.harvestSeason || 'Unknown'
+                if (!seasonMap[season]) seasonMap[season] = { predicted: 0, actual: 0 }
+                seasonMap[season].predicted += getPredictedForCluster(c)
+            })
+
             const trendData = Object.entries(seasonMap).map(([season, vals]) => ({
                 season,
                 predicted: Math.round(vals.predicted),
@@ -237,7 +308,7 @@ export default function AdminDashboard() {
             const nextCriticalFarms = clusters.map((c) => {
                 const sd = c.stageData
                 if (!sd) return null
-                const predicted = parseFloat(sd.predicted_yield || 0)
+                const predicted = getPredictedForCluster(c)
                 const actual = clusterActualYieldMap.get(c.id) || parseFloat(sd.current_yield || 0)
                 const prev = parseFloat((sd.pre_yield_kg ?? sd.previous_yield) || 0)
                 const decline = prev > 0 ? (((prev - actual) / prev) * 100).toFixed(1) : 0
@@ -266,6 +337,46 @@ export default function AdminDashboard() {
 
             setCriticalFarms(nextCriticalFarms)
 
+            const nextOverallOutputData = [
+                { metric: 'Predicted', value: Math.round(nextStats.predictedYield), fill: '#f59e0b' },
+                { metric: 'Actual', value: Math.round(nextStats.actualYield), fill: '#3b82f6' },
+                { metric: 'Previous', value: Math.round(nextStats.previousYield), fill: '#22c55e' },
+            ]
+            setOverallOutputData(nextOverallOutputData)
+
+            const stageOrder = ['seed-sapling', 'tree', 'flowering', 'ready-to-harvest']
+            const stageLabels = {
+                'seed-sapling': 'Sapling',
+                tree: 'Tree',
+                flowering: 'Flowering',
+                'ready-to-harvest': 'Ready',
+            }
+            const stageMap = {}
+            clusters.forEach((c) => {
+                const stageKey = c.plant_stage || 'seed-sapling'
+                if (!stageMap[stageKey]) {
+                    stageMap[stageKey] = {
+                        stageKey,
+                        stage: stageLabels[stageKey] || stageKey,
+                        predicted: 0,
+                        actual: 0,
+                        clusters: 0,
+                    }
+                }
+                stageMap[stageKey].predicted += getPredictedForCluster(c)
+                stageMap[stageKey].actual += clusterActualYieldMap.get(c.id) || parseFloat(c.stageData?.current_yield || 0)
+                stageMap[stageKey].clusters += 1
+            })
+
+            const nextStageOutputData = stageOrder
+                .filter((key) => stageMap[key])
+                .map((key) => ({
+                    ...stageMap[key],
+                    predicted: Math.round(stageMap[key].predicted),
+                    actual: Math.round(stageMap[key].actual),
+                }))
+            setStageOutputData(nextStageOutputData)
+
             // Add initial audit log entries
             const nextAuditLogs = [
                 { time: new Date().toLocaleString(), action: 'Dashboard loaded', user: 'Sir Ernesto' },
@@ -277,6 +388,8 @@ export default function AdminDashboard() {
                 criticalFarms: nextCriticalFarms,
                 yieldTrend: nextYieldTrend,
                 gradeDistribution: nextGradeDistribution,
+                overallOutputData: nextOverallOutputData,
+                stageOutputData: nextStageOutputData,
                 auditLogs: nextAuditLogs,
             })
         } catch (err) {
@@ -384,6 +497,7 @@ export default function AdminDashboard() {
             (farm.plantStage || '').toLowerCase().includes(dashboardQuery)
         )
         : sortedCriticalFarms
+    const formatKg = (value) => `${Math.round(Number(value) || 0).toLocaleString()} kg`
 
     if (loading) {
         return (
@@ -399,7 +513,7 @@ export default function AdminDashboard() {
             <div className="admin-dash-header">
                 <div>
                     <h1>Dashboard</h1>
-                    <p>Welcome back, Sir Ernesto — Quality Control Manager</p>
+                    <p>System overview and risk monitoring</p>
                 </div>
                 <button className="admin-export-btn" onClick={handleExportReport}>
                     <Download size={16} /> Export Report
@@ -517,6 +631,55 @@ export default function AdminDashboard() {
                 </div>
             </div>
 
+                        <div className="admin-charts-row admin-charts-row--clusters">
+                <div className="admin-chart-card">
+                    <div className="admin-chart-header">
+                        <h3>Overall Output Snapshot</h3>
+                    </div>
+                    <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={overallOutputData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis dataKey="metric" fontSize={11} tick={{ fill: '#64748b' }} />
+                            <YAxis fontSize={11} tick={{ fill: '#64748b' }} />
+                            <Tooltip
+                                contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }}
+                                formatter={(value, name) => [`${Number(value).toLocaleString()} kg`, name]}
+                            />
+                            <Legend />
+                            <Bar dataKey="value" name="Total Yield" radius={[4, 4, 0, 0]}>
+                                {overallOutputData.map((entry) => (
+                                    <Cell key={entry.metric} fill={entry.fill} />
+                                ))}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+
+                <div className="admin-chart-card">
+                    <div className="admin-chart-header">
+                        <h3>Output by Plant Stage</h3>
+                    </div>
+                    <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={stageOutputData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis dataKey="stage" fontSize={11} tick={{ fill: '#64748b' }} />
+                            <YAxis fontSize={11} tick={{ fill: '#64748b' }} />
+                            <Tooltip
+                                contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }}
+                                formatter={(value, name, payload) => {
+                                    if (name === 'Predicted') return [`${Number(value).toLocaleString()} kg`, `${payload?.payload?.clusters || 0} cluster(s)`]
+                                    if (name === 'Actual') return [`${Number(value).toLocaleString()} kg`, `${payload?.payload?.clusters || 0} cluster(s)`]
+                                    return [`${value}`, name]
+                                }}
+                            />
+                            <Legend />
+                            <Bar dataKey="predicted" name="Predicted" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="actual" name="Actual" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
             {/* Critical Farms Table */}
             <div className="admin-critical-section">
                 <div className="admin-critical-header">
@@ -561,6 +724,8 @@ export default function AdminDashboard() {
                                         </th>
                                         <th onClick={() => handleSort('farmName')} className="sortable">Farm Name</th>
                                         <th onClick={() => handleSort('clusterName')} className="sortable">Cluster</th>
+                                        <th onClick={() => handleSort('predictedYield')} className="sortable">Predicted Yield</th>
+                                        <th onClick={() => handleSort('actualYield')} className="sortable">Actual Yield</th>
                                         <th onClick={() => handleSort('riskLevel')} className="sortable">Risk Level</th>
                                         <th onClick={() => handleSort('yieldDecline')} className="sortable">Yield Decline</th>
                                         <th onClick={() => handleSort('priorityScore')} className="sortable">Priority</th>
@@ -579,6 +744,8 @@ export default function AdminDashboard() {
                                             </td>
                                             <td className="farm-name-cell">{farm.farmName}</td>
                                             <td>{farm.clusterName}</td>
+                                            <td>{formatKg(farm.predictedYield)}</td>
+                                            <td>{formatKg(farm.actualYield)}</td>
                                             <td>
                                                 <span className="risk-badge" style={{ background: RISK_COLORS[farm.riskLevel] + '20', color: RISK_COLORS[farm.riskLevel] }}>
                                                     {farm.riskLevel}
@@ -627,6 +794,8 @@ export default function AdminDashboard() {
                                     </div>
                                     <div className="admin-critical-mobile-meta">
                                         <span>{farm.clusterName}</span>
+                                        <span>Predicted: {formatKg(farm.predictedYield)}</span>
+                                        <span>Actual: {formatKg(farm.actualYield)}</span>
                                         <span className="risk-badge" style={{ background: RISK_COLORS[farm.riskLevel] + '20', color: RISK_COLORS[farm.riskLevel] }}>
                                             {farm.riskLevel}
                                         </span>
@@ -808,3 +977,5 @@ export default function AdminDashboard() {
         </div>
     )
 }
+
+

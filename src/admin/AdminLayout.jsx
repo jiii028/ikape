@@ -23,6 +23,8 @@ import './AdminLayout.css'
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 const SIDEBAR_PREF_KEY = 'ikape_admin_sidebar_collapsed'
+const ADMIN_NOTIF_VIEWED_KEY_PREFIX = 'ikape_admin_notifications_viewed'
+const ADMIN_NOTIF_CLEARED_KEY_PREFIX = 'ikape_admin_notifications_cleared'
 const ADMIN_NAV_ITEMS = [
     { path: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { path: '/admin/farmers', icon: Users, label: 'Farmers' },
@@ -36,7 +38,13 @@ export default function AdminLayout() {
     const timeoutRef = useRef(null)
     const profileMenuRef = useRef(null)
     const searchContainerRef = useRef(null)
+    const notificationMenuRef = useRef(null)
     const [showProfileMenu, setShowProfileMenu] = useState(false)
+    const [showNotifications, setShowNotifications] = useState(false)
+    const [showAllNotifications, setShowAllNotifications] = useState(false)
+    const [viewedNotificationIds, setViewedNotificationIds] = useState([])
+    const [clearedNotificationIds, setClearedNotificationIds] = useState([])
+    const [notificationPrefsHydrated, setNotificationPrefsHydrated] = useState(false)
     const [lastActivity, setLastActivity] = useState(Date.now())
     const [logoutConfirm, setLogoutConfirm] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
@@ -87,6 +95,7 @@ export default function AdminLayout() {
         const handleOutsideClick = (event) => {
             const clickedInsideProfile = profileMenuRef.current?.contains(event.target)
             const clickedInsideSearch = searchContainerRef.current?.contains(event.target)
+            const clickedInsideNotifications = notificationMenuRef.current?.contains(event.target)
 
             if (!clickedInsideProfile) {
                 setShowProfileMenu(false)
@@ -94,6 +103,11 @@ export default function AdminLayout() {
 
             if (!clickedInsideSearch) {
                 setIsSearchOpen(false)
+            }
+
+            if (!clickedInsideNotifications) {
+                setShowNotifications(false)
+                setShowAllNotifications(false)
             }
         }
 
@@ -104,6 +118,8 @@ export default function AdminLayout() {
     useEffect(() => {
         setShowProfileMenu(false)
         setIsSearchOpen(false)
+        setShowNotifications(false)
+        setShowAllNotifications(false)
     }, [location.pathname])
 
     useEffect(() => {
@@ -249,6 +265,156 @@ export default function AdminLayout() {
         }
     }
 
+    const rawNotifications = useMemo(() => {
+        const farmersCount = searchEntities.farmers.length
+        const farmsCount = searchEntities.farms.length
+        const clustersCount = searchEntities.clusters.length
+
+        const items = [
+            {
+                id: `farmers-${farmersCount}`,
+                title: `${farmersCount} registered farmer(s)`,
+                detail: 'Review farmer profiles and account statuses.',
+            },
+            {
+                id: `farms-${farmsCount}`,
+                title: `${farmsCount} total farm(s)`,
+                detail: 'Monitor farm activity from dashboard analytics.',
+            },
+            {
+                id: `clusters-${clustersCount}`,
+                title: `${clustersCount} active cluster(s)`,
+                detail: 'Track cluster stage data and risk indicators.',
+            },
+            {
+                id: 'session-monitor',
+                title: 'Admin session monitor',
+                detail: `Last activity ${Math.floor((Date.now() - lastActivity) / 60000)} minute(s) ago.`,
+            },
+            {
+                id: 'search-tip',
+                title: 'Search tip',
+                detail: 'Use global search to jump to a farmer, farm, or cluster quickly.',
+            },
+        ]
+
+        return items
+    }, [searchEntities, lastActivity])
+
+    const notificationViewedKey = user?.id
+        ? `${ADMIN_NOTIF_VIEWED_KEY_PREFIX}:${user.id}`
+        : `${ADMIN_NOTIF_VIEWED_KEY_PREFIX}:guest`
+    const notificationClearedKey = user?.id
+        ? `${ADMIN_NOTIF_CLEARED_KEY_PREFIX}:${user.id}`
+        : `${ADMIN_NOTIF_CLEARED_KEY_PREFIX}:guest`
+    const guestNotificationViewedKey = `${ADMIN_NOTIF_VIEWED_KEY_PREFIX}:guest`
+    const guestNotificationClearedKey = `${ADMIN_NOTIF_CLEARED_KEY_PREFIX}:guest`
+
+    useEffect(() => {
+        setNotificationPrefsHydrated(false)
+
+        try {
+            const savedViewed = localStorage.getItem(notificationViewedKey)
+            let parsedViewed = savedViewed ? JSON.parse(savedViewed) : []
+            if (user?.id && (!Array.isArray(parsedViewed) || parsedViewed.length === 0)) {
+                const guestViewed = localStorage.getItem(guestNotificationViewedKey)
+                const parsedGuestViewed = guestViewed ? JSON.parse(guestViewed) : []
+                if (Array.isArray(parsedGuestViewed) && parsedGuestViewed.length > 0) {
+                    parsedViewed = parsedGuestViewed
+                }
+            }
+            setViewedNotificationIds(Array.isArray(parsedViewed) ? parsedViewed : [])
+        } catch {
+            setViewedNotificationIds([])
+        }
+
+        try {
+            const savedCleared = localStorage.getItem(notificationClearedKey)
+            let parsedCleared = savedCleared ? JSON.parse(savedCleared) : []
+            if (user?.id && (!Array.isArray(parsedCleared) || parsedCleared.length === 0)) {
+                const guestCleared = localStorage.getItem(guestNotificationClearedKey)
+                const parsedGuestCleared = guestCleared ? JSON.parse(guestCleared) : []
+                if (Array.isArray(parsedGuestCleared) && parsedGuestCleared.length > 0) {
+                    parsedCleared = parsedGuestCleared
+                }
+            }
+            setClearedNotificationIds(Array.isArray(parsedCleared) ? parsedCleared : [])
+        } catch {
+            setClearedNotificationIds([])
+        }
+
+        setNotificationPrefsHydrated(true)
+    }, [
+        guestNotificationClearedKey,
+        guestNotificationViewedKey,
+        notificationClearedKey,
+        notificationViewedKey,
+        user?.id,
+    ])
+
+    useEffect(() => {
+        if (!notificationPrefsHydrated) return
+
+        try {
+            localStorage.setItem(notificationViewedKey, JSON.stringify(viewedNotificationIds))
+        } catch {
+            // Ignore storage write errors in restricted browser contexts.
+        }
+    }, [notificationPrefsHydrated, notificationViewedKey, viewedNotificationIds])
+
+    useEffect(() => {
+        if (!notificationPrefsHydrated) return
+
+        try {
+            localStorage.setItem(notificationClearedKey, JSON.stringify(clearedNotificationIds))
+        } catch {
+            // Ignore storage write errors in restricted browser contexts.
+        }
+    }, [clearedNotificationIds, notificationClearedKey, notificationPrefsHydrated])
+
+    const notifications = useMemo(
+        () => rawNotifications.filter((item) => !clearedNotificationIds.includes(item.id)),
+        [rawNotifications, clearedNotificationIds]
+    )
+
+    const unreadNotificationCount = useMemo(
+        () =>
+            notificationPrefsHydrated
+                ? notifications.filter((item) => !viewedNotificationIds.includes(item.id)).length
+                : 0,
+        [notificationPrefsHydrated, notifications, viewedNotificationIds]
+    )
+
+    const displayedNotifications = showAllNotifications ? notifications : notifications.slice(0, 3)
+
+    const markNotificationsAsViewed = () => {
+        setViewedNotificationIds((prev) => {
+            const merged = new Set([...prev, ...notifications.map((item) => item.id)])
+            return [...merged]
+        })
+    }
+
+    const handleToggleNotifications = () => {
+        setShowNotifications((prev) => {
+            const willOpen = !prev
+            if (willOpen) {
+                markNotificationsAsViewed()
+            } else {
+                setShowAllNotifications(false)
+            }
+            return willOpen
+        })
+    }
+
+    const handleClearNotifications = () => {
+        if (notifications.length === 0) return
+
+        const idsToClear = notifications.map((item) => item.id)
+        setClearedNotificationIds((prev) => [...new Set([...prev, ...idsToClear])])
+        setViewedNotificationIds((prev) => [...new Set([...prev, ...idsToClear])])
+        setShowAllNotifications(false)
+    }
+
     return (
         <div className="admin-layout">
             <aside className={`admin-sidebar ${isSidebarCollapsed ? 'admin-sidebar--collapsed' : ''}`}>
@@ -353,9 +519,60 @@ export default function AdminLayout() {
                         </div>
                     </div>
                     <div className="admin-topbar-right">
-                        <button className="admin-topbar-icon-btn">
-                            <Bell size={20} />
-                        </button>
+                        <div className="admin-notification-menu" ref={notificationMenuRef}>
+                            <button
+                                type="button"
+                                className="admin-topbar-icon-btn admin-notification-trigger"
+                                onClick={handleToggleNotifications}
+                                aria-haspopup="menu"
+                                aria-expanded={showNotifications}
+                                aria-label="Notifications"
+                            >
+                                <Bell size={20} />
+                                {unreadNotificationCount > 0 && (
+                                    <span className="admin-notification-badge">{Math.min(unreadNotificationCount, 99)}</span>
+                                )}
+                            </button>
+                            {showNotifications && (
+                                <div className="admin-notification-dropdown" role="menu" aria-label="Admin notifications">
+                                    <div className="admin-notification-header">
+                                        <h4>Notifications</h4>
+                                        <div className="admin-notification-header-actions">
+                                            <span>{unreadNotificationCount > 0 ? `${unreadNotificationCount} new` : 'All read'}</span>
+                                            <button
+                                                type="button"
+                                                className="admin-notification-clear-btn"
+                                                onClick={handleClearNotifications}
+                                                disabled={notifications.length === 0}
+                                            >
+                                                Clear
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {displayedNotifications.length === 0 ? (
+                                        <div className="admin-notification-empty">No notifications available.</div>
+                                    ) : (
+                                        <div className="admin-notification-list">
+                                            {displayedNotifications.map((item) => (
+                                                <div key={item.id} className="admin-notification-item">
+                                                    <span className="admin-notification-item-title">{item.title}</span>
+                                                    <span className="admin-notification-item-detail">{item.detail}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {notifications.length > 3 && (
+                                        <button
+                                            type="button"
+                                            className="admin-notification-view-more"
+                                            onClick={() => setShowAllNotifications((prev) => !prev)}
+                                        >
+                                            {showAllNotifications ? 'Show less' : 'View more'}
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                         <div className="admin-user-menu" ref={profileMenuRef}>
                             <button
                                 type="button"
@@ -417,8 +634,8 @@ export default function AdminLayout() {
                 isOpen={logoutConfirm}
                 onClose={() => setLogoutConfirm(false)}
                 onConfirm={handleLogout}
-                title="Confirm Logout"
-                message="Are you sure you want to log out? You will need to log in again to access your admin account."
+                title="Log out of admin account?"
+                message="Your current administrator session will end on this device."
                 confirmText="Log Out"
                 cancelText="Cancel"
                 variant="warning"
