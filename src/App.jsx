@@ -17,6 +17,7 @@ import AdminLayout from './admin/AdminLayout'
 import AdminDashboard from './admin/pages/AdminDashboard'
 import RegisteredFarmers from './admin/pages/RegisteredFarmers'
 import Prediction from './admin/pages/Prediction'
+import AgriclimaticInputs from './admin/pages/AgriclimaticInputs'
 
 // ===== STRICT ROUTE GUARDS =====
 
@@ -89,6 +90,7 @@ function App() {
             <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="farmers" element={<RegisteredFarmers />} />
             <Route path="prediction" element={<Prediction />} />
+            <Route path="agriclimatic-inputs" element={<AgriclimaticInputs />} />
           </Route>
 
           {/* Catch-all: keep authenticated users in their dashboard, guests to login */}

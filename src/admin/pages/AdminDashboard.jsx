@@ -32,7 +32,7 @@ import './AdminDashboard.css'
 
 const RISK_COLORS = { Low: '#22c55e', Moderate: '#f59e0b', High: '#f97316', Critical: '#ef4444' }
 const GRADE_COLORS = ['#22c55e', '#3b82f6', '#f59e0b']
-const ADMIN_DASHBOARD_CACHE_KEY = 'admin_dashboard:overview:v3'
+const ADMIN_DASHBOARD_CACHE_KEY = 'admin_dashboard:overview:v4'
 const ADMIN_DASHBOARD_CACHE_TTL_MS = 2 * 60 * 1000
 
 const INTERVENTION_BY_RISK = {
@@ -69,6 +69,28 @@ function toNumber(value, fallback = 0) {
     if (value === '' || value === null || value === undefined) return fallback
     const parsed = Number(value)
     return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function getFirstFiniteNumber(obj, keys, fallback = 0) {
+    for (const key of keys) {
+        const value = obj?.[key]
+        if (value === '' || value === null || value === undefined) continue
+        const parsed = Number(value)
+        if (Number.isFinite(parsed)) return parsed
+    }
+    return fallback
+}
+
+function pickLatestStageData(stageData) {
+    if (!stageData) return null
+    if (!Array.isArray(stageData)) return stageData
+    if (stageData.length === 0) return null
+
+    return [...stageData].sort((a, b) => {
+        const aTs = new Date(a?.updated_at || a?.created_at || 0).getTime()
+        const bTs = new Date(b?.updated_at || b?.created_at || 0).getTime()
+        return bTs - aTs
+    })[0]
 }
 
 function mapClusterToModelFeatures(cluster) {
@@ -190,7 +212,7 @@ export default function AdminDashboard() {
             const farms = farmsRes.data || []
             const clusters = (clustersRes.data || []).map((c) => ({
                 ...c,
-                stageData: Array.isArray(c.cluster_stage_data) ? c.cluster_stage_data[0] : c.cluster_stage_data,
+                stageData: pickLatestStageData(c.cluster_stage_data),
             }))
             const harvests = harvestsRes.data || []
             const clusterActualYieldMap = new Map()
@@ -199,8 +221,16 @@ export default function AdminDashboard() {
             harvests.forEach((record) => {
                 const clusterId = record.cluster_id
                 if (!clusterId) return
-                const nextTotal = (clusterActualYieldMap.get(clusterId) || 0) + parseFloat(record.yield_kg || 0)
-                clusterActualYieldMap.set(clusterId, nextTotal)
+                const current = clusterActualYieldMap.get(clusterId)
+                const currentTs = current?.ts ? new Date(current.ts).getTime() : -1
+                const nextTs = record.recorded_at ? new Date(record.recorded_at).getTime() : Date.now()
+
+                if (!current || nextTs >= currentTs) {
+                    clusterActualYieldMap.set(clusterId, {
+                        value: getFirstFiniteNumber(record, ['yield_kg', 'actual_yield', 'current_yield'], 0),
+                        ts: record.recorded_at,
+                    })
+                }
             })
 
             try {
@@ -242,8 +272,8 @@ export default function AdminDashboard() {
                 const sd = c.stageData
                 if (sd) {
                     predictedYield += getPredictedForCluster(c)
-                    actualYield += clusterActualYieldMap.get(c.id) || parseFloat(sd.current_yield || 0)
-                    previousYield += parseFloat((sd.pre_yield_kg ?? sd.previous_yield) || 0)
+                    actualYield += clusterActualYieldMap.get(c.id)?.value ?? getFirstFiniteNumber(sd, ['current_yield', 'currentYield', 'post_current_yield', 'postCurrentYield'], 0)
+                    previousYield += getFirstFiniteNumber(sd, ['pre_yield_kg', 'preYieldKg', 'previous_yield', 'previousYield'], 0)
                 }
             })
 
@@ -309,29 +339,40 @@ export default function AdminDashboard() {
                 const sd = c.stageData
                 if (!sd) return null
                 const predicted = getPredictedForCluster(c)
-                const actual = clusterActualYieldMap.get(c.id) || parseFloat(sd.current_yield || 0)
-                const prev = parseFloat((sd.pre_yield_kg ?? sd.previous_yield) || 0)
-                const decline = prev > 0 ? (((prev - actual) / prev) * 100).toFixed(1) : 0
-                let risk = 'Low'
+                const actual = clusterActualYieldMap.get(c.id)?.value
+                    ?? getFirstFiniteNumber(sd, ['current_yield', 'currentYield', 'post_current_yield', 'postCurrentYield'], 0)
+                const prev = getFirstFiniteNumber(sd, ['pre_yield_kg', 'preYieldKg', 'previous_yield', 'previousYield'], 0)
+                const decline = prev > 0 ? (((prev - actual) / prev) * 100) : 0
+                const soilPh = getFirstFiniteNumber(sd, ['soil_ph', 'soilPh'], 0)
+                const moisture = getFirstFiniteNumber(sd, ['bean_moisture', 'beanMoisture'], 0)
+                const defectCount = getFirstFiniteNumber(sd, ['defect_count', 'defectCount'], 0)
+
                 let priority = 1
-                if (decline > 50) { risk = 'Critical'; priority = 4 }
-                else if (decline > 30) { risk = 'High'; priority = 3 }
-                else if (decline > 15) { risk = 'Moderate'; priority = 2 }
+                if (decline > 50) priority = Math.max(priority, 4)
+                else if (decline > 30) priority = Math.max(priority, 3)
+                else if (decline > 15) priority = Math.max(priority, 2)
+
+                if (predicted > 0 && actual === 0) priority = Math.max(priority, 3)
+                if (soilPh > 0 && (soilPh < 5.0 || soilPh > 7.0)) priority = Math.max(priority, 2)
+                if (moisture > 13) priority = Math.max(priority, moisture > 15 ? 3 : 2)
+                if (defectCount >= 20) priority = Math.max(priority, defectCount >= 40 ? 3 : 2)
+
+                const risk = priority >= 4 ? 'Critical' : priority === 3 ? 'High' : priority === 2 ? 'Moderate' : 'Low'
 
                 return {
                     id: c.id,
                     farmName: c.farms?.farm_name || 'Unknown Farm',
                     clusterName: c.cluster_name,
                     riskLevel: risk,
-                    yieldDecline: parseFloat(decline),
+                    yieldDecline: Number.isFinite(decline) ? parseFloat(decline.toFixed(1)) : 0,
                     priorityScore: priority,
-                    soilPh: sd.soil_ph || 'N/A',
-                    moisture: sd.bean_moisture || 'N/A',
+                    soilPh: soilPh || 'N/A',
+                    moisture: moisture || 'N/A',
                     predictedYield: predicted,
                     actualYield: actual,
                     previousYield: prev,
                     plantStage: c.plant_stage,
-                    defectCount: sd.defect_count || 0,
+                    defectCount,
                 }
             }).filter(Boolean).filter(c => c.riskLevel !== 'Low')
 
@@ -364,7 +405,8 @@ export default function AdminDashboard() {
                     }
                 }
                 stageMap[stageKey].predicted += getPredictedForCluster(c)
-                stageMap[stageKey].actual += clusterActualYieldMap.get(c.id) || parseFloat(c.stageData?.current_yield || 0)
+                stageMap[stageKey].actual += clusterActualYieldMap.get(c.id)?.value
+                    ?? getFirstFiniteNumber(c.stageData, ['current_yield', 'currentYield', 'post_current_yield', 'postCurrentYield'], 0)
                 stageMap[stageKey].clusters += 1
             })
 

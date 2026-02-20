@@ -6,6 +6,7 @@ import {
     LayoutDashboard,
     Users,
     TrendingUp,
+    CloudSun,
     LogOut,
     Search,
     Bell,
@@ -29,6 +30,7 @@ const ADMIN_NAV_ITEMS = [
     { path: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { path: '/admin/farmers', icon: Users, label: 'Farmers' },
     { path: '/admin/prediction', icon: TrendingUp, label: 'Prediction' },
+    { path: '/admin/agriclimatic-inputs', icon: CloudSun, label: 'Agriclimatic Inputs' },
 ]
 
 export default function AdminLayout() {

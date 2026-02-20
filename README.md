@@ -27,6 +27,13 @@ npm install
 npm run dev
 ```
 
+## Supabase Sync Scripts
+
+Run these in Supabase SQL Editor when setting up/updating DB triggers:
+
+- `sync_plant_count_to_stage_data.sql`
+- `sync_agriclimatic_admin_to_cluster_stage_data.sql`
+
 ## ML Model API (Final Trained Models)
 
 The app can use the trained models in `ml_models/` through the FastAPI service in `backend/predict_api.py`.
