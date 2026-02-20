@@ -138,7 +138,7 @@ function mapClusterToModelFeatures(cluster) {
 }
 
 export default function AdminDashboard() {
-    const { user } = useAuth()
+    const { user, authUser } = useAuth()
     const [searchParams] = useSearchParams()
     const [stats, setStats] = useState({
         totalFarmers: 0,
@@ -556,7 +556,7 @@ export default function AdminDashboard() {
             .from('farmer_notifications')
             .insert({
                 recipient_user_id: recipientUserId,
-                actor_user_id: user?.id || null,
+                actor_user_id: authUser?.id || user?.id || null,
                 cluster_id: farm.id,
                 farm_id: farm.farmId,
                 notification_type: type,

@@ -36,7 +36,7 @@ const FARMER_MAIN_NAV_ITEMS = [
 ]
 
 export default function DashboardLayout() {
-  const { user, logout } = useAuth()
+  const { user, authUser, logout } = useAuth()
   const { farm, clusters } = useFarm()
   const navigate = useNavigate()
   const location = useLocation()
@@ -122,11 +122,14 @@ export default function DashboardLayout() {
     setShowAllNotifications(false)
   }, [location.pathname])
 
+  const notificationRecipientId = authUser?.id || user?.id || null
+
   useEffect(() => {
     let active = true
+    let refreshTimerId = null
 
     const loadServerNotifications = async () => {
-      if (!user?.id) {
+      if (!notificationRecipientId) {
         if (active) setServerNotifications([])
         return
       }
@@ -134,7 +137,7 @@ export default function DashboardLayout() {
       const { data, error } = await supabase
         .from('farmer_notifications')
         .select('id, title, message, created_at, cluster_id, notification_type')
-        .eq('recipient_user_id', user.id)
+        .eq('recipient_user_id', notificationRecipientId)
         .order('created_at', { ascending: false })
         .limit(50)
 
@@ -164,11 +167,30 @@ export default function DashboardLayout() {
       setServerNotifications(mapped)
     }
 
+    const handleWindowFocus = () => {
+      loadServerNotifications()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadServerNotifications()
+      }
+    }
+
     loadServerNotifications()
+    refreshTimerId = window.setInterval(loadServerNotifications, 15000)
+    window.addEventListener('focus', handleWindowFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     return () => {
       active = false
+      if (refreshTimerId) {
+        window.clearInterval(refreshTimerId)
+      }
+      window.removeEventListener('focus', handleWindowFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [user?.id])
+  }, [notificationRecipientId])
 
   const rawNotifications = useMemo(() => {
     const items = []

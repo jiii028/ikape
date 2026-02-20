@@ -24,14 +24,38 @@ DROP POLICY IF EXISTS "Farmer can view own notifications" ON public.farmer_notif
 CREATE POLICY "Farmer can view own notifications"
   ON public.farmer_notifications
   FOR SELECT
-  USING (auth.uid() = recipient_user_id);
+  USING (
+    auth.uid() = recipient_user_id
+    OR EXISTS (
+      SELECT 1
+      FROM public.users u
+      WHERE u.id = recipient_user_id
+        AND lower(u.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    )
+  );
 
 DROP POLICY IF EXISTS "Farmer can update own notifications" ON public.farmer_notifications;
 CREATE POLICY "Farmer can update own notifications"
   ON public.farmer_notifications
   FOR UPDATE
-  USING (auth.uid() = recipient_user_id)
-  WITH CHECK (auth.uid() = recipient_user_id);
+  USING (
+    auth.uid() = recipient_user_id
+    OR EXISTS (
+      SELECT 1
+      FROM public.users u
+      WHERE u.id = recipient_user_id
+        AND lower(u.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    )
+  )
+  WITH CHECK (
+    auth.uid() = recipient_user_id
+    OR EXISTS (
+      SELECT 1
+      FROM public.users u
+      WHERE u.id = recipient_user_id
+        AND lower(u.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    )
+  );
 
 DROP POLICY IF EXISTS "Admin can insert farmer notifications" ON public.farmer_notifications;
 CREATE POLICY "Admin can insert farmer notifications"
