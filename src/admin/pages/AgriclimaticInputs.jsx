@@ -39,7 +39,7 @@ export default function AgriclimaticInputs() {
       setSuccess('')
 
       const { data, error: fetchError } = await supabase
-        .from('agriclimatic_admin')
+        .from('admin_climate_reference')
         .select('id, monthly_temperature, rainfall, humidity, soil_ph, updated_at')
         .order('updated_at', { ascending: false })
         .limit(1)
@@ -103,7 +103,7 @@ export default function AgriclimaticInputs() {
 
     if (rowId) {
       const response = await supabase
-        .from('agriclimatic_admin')
+        .from('admin_climate_reference')
         .update(payload)
         .eq('id', rowId)
         .select('id, updated_at')
@@ -112,7 +112,7 @@ export default function AgriclimaticInputs() {
       savedData = response.data
     } else {
       const response = await supabase
-        .from('agriclimatic_admin')
+        .from('admin_climate_reference')
         .insert(payload)
         .select('id, updated_at')
         .single()
