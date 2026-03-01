@@ -28,27 +28,52 @@ function toNumber(value, fallback = 0) {
 
 function mapClusterToModelFeatures(cluster) {
   const sd = cluster?.stageData || {}
+  const plantCount = toNumber(cluster?.plant_count ?? cluster?.plantCount, 100)
+  const preYieldKg = toNumber(sd.pre_yield_kg ?? sd.preYieldKg ?? sd.previous_yield ?? sd.previousYield, 0)
+  const preTotalTrees = toNumber(sd.pre_total_trees ?? sd.preTotalTrees ?? plantCount, plantCount)
+  
+  // Calculate derived features
+  const previousYieldPerTree = preTotalTrees > 0 ? preYieldKg / preTotalTrees : 0
+  const previousFinePct = toNumber(sd.previous_fine_pct ?? sd.grade_fine ?? sd.gradeFine ?? sd.preGradeFine, 20)
+  const previousPremiumPct = toNumber(sd.previous_premium_pct ?? sd.grade_premium ?? sd.gradePremium ?? sd.preGradePremium, 55)
+  const previousCommercialPct = toNumber(sd.previous_commercial_pct ?? sd.grade_commercial ?? sd.gradeCommercial ?? sd.preGradeCommercial, 25)
+  const treesProductivePct = toNumber(sd.trees_productive_pct ?? sd.treesProductivePct, 80)
+  
+  // Determine yield trend based on historical data
+  let yieldTrend = 0  // stable
+  if (sd.yield_trend !== undefined) {
+    yieldTrend = toNumber(sd.yield_trend, 0)
+  } else if (sd.previous_yield && sd.current_yield) {
+    const prev = toNumber(sd.previous_yield)
+    const curr = toNumber(sd.current_yield)
+    if (curr > prev * 1.1) yieldTrend = 1  // improving
+    else if (curr < prev * 0.9) yieldTrend = -1  // declining
+  }
+  
   return {
-    plant_age_months: toNumber(sd.plant_age_months ?? sd.plantAgeMonths),
-    number_of_plants: toNumber(sd.number_of_plants ?? cluster?.plant_count ?? cluster?.plantCount),
-    fertilizer_type: sd.fertilizer_type ?? sd.fertilizerType ?? '',
-    fertilizer_frequency: sd.fertilizer_frequency ?? sd.fertilizerFrequency ?? '',
-    pesticide_type: sd.pesticide_type ?? sd.pesticideType ?? '',
-    pesticide_frequency: sd.pesticide_frequency ?? sd.pesticideFrequency ?? '',
-    pruning_interval_months: toNumber(sd.pruning_interval_months ?? sd.pruningIntervalMonths),
-    shade_tree_present: sd.shade_tree_present ?? sd.shadeTrees ?? '',
-    soil_ph: toNumber(sd.soil_ph ?? sd.soilPh),
-    avg_temp_c: toNumber(sd.avg_temp_c ?? sd.monthly_temperature ?? sd.monthlyTemperature),
-    avg_rainfall_mm: toNumber(sd.avg_rainfall_mm ?? sd.rainfall),
-    avg_humidity_pct: toNumber(sd.avg_humidity_pct ?? sd.humidity),
-    pre_total_trees: toNumber(sd.pre_total_trees ?? sd.preTotalTrees ?? cluster?.plant_count ?? cluster?.plantCount),
-    pre_yield_kg: toNumber(sd.pre_yield_kg ?? sd.preYieldKg ?? sd.previous_yield ?? sd.previousYield),
-    pre_grade_fine: toNumber(sd.pre_grade_fine ?? sd.preGradeFine),
-    pre_grade_premium: toNumber(sd.pre_grade_premium ?? sd.preGradePremium),
-    pre_grade_commercial: toNumber(sd.pre_grade_commercial ?? sd.preGradeCommercial),
-    previous_fine_pct: toNumber(sd.previous_fine_pct ?? sd.grade_fine ?? sd.gradeFine),
-    previous_premium_pct: toNumber(sd.previous_premium_pct ?? sd.grade_premium ?? sd.gradePremium),
-    previous_commercial_pct: toNumber(sd.previous_commercial_pct ?? sd.grade_commercial ?? sd.gradeCommercial),
+    // Agronomic features
+    plant_age_months: toNumber(sd.plant_age_months ?? sd.plantAgeMonths, 36),
+    number_of_plants: plantCount,
+    fertilizer_type: sd.fertilizer_type ?? sd.fertilizerType ?? 'organic',
+    fertilizer_frequency: sd.fertilizer_frequency ?? sd.fertilizerFrequency ?? 'sometimes',
+    pesticide_type: sd.pesticide_type ?? sd.pesticideType ?? 'organic',
+    pesticide_frequency: sd.pesticide_frequency ?? sd.pesticideFrequency ?? 'rarely',
+    pruning_interval_months: toNumber(sd.pruning_interval_months ?? sd.pruningIntervalMonths, 12),
+    shade_tree_present: sd.shade_tree_present ?? sd.shadeTrees ?? true,
+    
+    // Environmental features
+    soil_ph: toNumber(sd.soil_ph ?? sd.soilPh, 5.8),
+    avg_temp_c: toNumber(sd.avg_temp_c ?? sd.monthly_temperature ?? sd.monthlyTemperature, 24),
+    avg_rainfall_mm: toNumber(sd.avg_rainfall_mm ?? sd.rainfall ?? sd.monthly_rainfall, 170),
+    avg_humidity_pct: toNumber(sd.avg_humidity_pct ?? sd.humidity, 75),
+    
+    // Historical performance features
+    previous_yield_per_tree: previousYieldPerTree,
+    previous_fine_pct: previousFinePct,
+    previous_premium_pct: previousPremiumPct,
+    previous_commercial_pct: previousCommercialPct,
+    trees_productive_pct: treesProductivePct,
+    yield_trend: yieldTrend,
   }
 }
 
@@ -95,7 +120,12 @@ export default function Prediction() {
       const [clustersRes, harvestsRes] = await Promise.all([
         supabase
           .from('clusters')
-          .select('*, cluster_stage_data(*), farms!inner(id, farm_name, user_id, users!inner(first_name, last_name))'),
+          .select(`
+            *,
+            cluster_stage_data_compat(*),
+            cluster_lifecycle_events(*),
+            farms(id, farm_name, user_id, users!inner(first_name, last_name))
+          `),
         supabase
           .from('harvest_records')
           .select('*, clusters!inner(farm_id, farms!inner(farm_name))'),
@@ -107,7 +137,10 @@ export default function Prediction() {
 
       const clusters = (clustersRes.data || []).map((c) => ({
         ...c,
-        stageData: Array.isArray(c.cluster_stage_data) ? c.cluster_stage_data[0] : c.cluster_stage_data,
+        stageData: Array.isArray(c.cluster_stage_data_compat)
+          ? c.cluster_stage_data_compat[0]
+          : c.cluster_stage_data_compat,
+        plantStage: c.cluster_lifecycle_events?.[c.cluster_lifecycle_events.length - 1]?.stage || 'seed-sapling',
       }))
       const harvests = harvestsRes.data || []
       const clusterActualYieldMap = new Map()

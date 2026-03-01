@@ -1,6 +1,9 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect, useCallback } from 'react'
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
-import { FarmProvider } from './context/FarmContext'
+import { FarmProvider, useFarm } from './context/FarmContext'
+import { setupSyncListeners, setAuthErrorCallback, setSyncCompleteCallback } from './lib/syncManager'
+import { clearCachedByPrefix } from './lib/queryCache'
 import Login from './pages/Login/Login'
 import Register from './pages/Register/Register'
 import ResetPassword from './pages/ResetPassword/ResetPassword'
@@ -62,11 +65,63 @@ function HomeRedirect() {
   return <Navigate to={user.role === 'admin' ? '/admin/dashboard' : '/dashboard'} replace />
 }
 
+// Component to handle sync events (auth errors and sync complete)
+function SyncEventHandler({ children }) {
+  const navigate = useNavigate();
+  const { logout } = useAuth();
+  const { fetchFarmData, removeClustersByClientIds } = useFarm();
+
+  useEffect(() => {
+    // Set up auth error callback for sync manager
+    setAuthErrorCallback(async (error) => {
+      console.error('Sync authentication error:', error);
+      
+      // Show alert to user
+      alert('Your session has expired. Please log in again to sync your data.');
+      
+      // Log out and redirect to login
+      await logout();
+      navigate('/login', { replace: true });
+    });
+
+    // Set up sync complete callback to refresh farm data
+    setSyncCompleteCallback(async (syncedClientIds) => {
+      console.log('Sync completed - refreshing farm data', syncedClientIds);
+      
+      // IMPORTANT: First remove offline clusters from React state by their client IDs
+      // This prevents duplication when fresh data is fetched
+      if (syncedClientIds && syncedClientIds.length > 0) {
+        console.log('Removing synced offline clusters from state:', syncedClientIds);
+        removeClustersByClientIds(syncedClientIds);
+      }
+      
+      // Clear the query cache to force fresh fetch from server
+      clearCachedByPrefix('farm_context:');
+      
+      // Wait for React state update to complete, then fetch fresh data
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await fetchFarmData(true); // forceRefresh = true to bypass cache
+    });
+
+    return () => {
+      setAuthErrorCallback(null);
+      setSyncCompleteCallback(null);
+    };
+  }, [navigate, logout, fetchFarmData, removeClustersByClientIds]);
+
+  return children;
+}
+
 function App() {
+  useEffect(() => {
+    setupSyncListeners();
+  }, []);
+
   return (
     <AuthProvider>
       <FarmProvider>
-        <Routes>
+        <SyncEventHandler>
+          <Routes>
           {/* Public routes */}
           <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
           <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
@@ -96,6 +151,7 @@ function App() {
           {/* Catch-all: keep authenticated users in their dashboard, guests to login */}
           <Route path="*" element={<HomeRedirect />} />
         </Routes>
+        </SyncEventHandler>
       </FarmProvider>
     </AuthProvider>
   )

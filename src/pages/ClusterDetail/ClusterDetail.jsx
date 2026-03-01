@@ -295,14 +295,14 @@ export default function ClusterDetail() {
     let isCancelled = false
     const fetchAgriclimatic = async () => {
       const { data, error } = await supabase
-        .from('agriclimatic_admin')
+        .from('admin_climate_reference')
         .select('monthly_temperature, rainfall, humidity, soil_ph, updated_at, created_at')
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle()
 
       if (error) {
-        console.error('Error fetching agriclimatic_admin:', error.message)
+        console.error('Error fetching admin_climate_reference:', error.message)
         return
       }
 

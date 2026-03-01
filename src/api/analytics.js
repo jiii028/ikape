@@ -1,6 +1,6 @@
 export async function fetchOverview() {
     try {
-        const response = await fetch("http://localhost:8000/analytics/overview");
+        const response = await fetch("/api/analytics/overview");
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }

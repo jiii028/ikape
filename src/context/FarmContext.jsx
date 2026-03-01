@@ -1,7 +1,124 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './AuthContext'
 import { getCached, setCached, clearCachedByPrefix } from '../lib/queryCache'
+import {
+  getCachedData,
+  refreshLocalCache,
+  saveOfflineRecord,
+  saveOptimisticData,
+  removePendingOperationsForRecord
+} from '../lib/syncManager'
+
+// Optimized data fetching functions
+const fetchFarmDataOptimized = async (authUser) => {
+  try {
+    // First, fetch the farm for this user
+    const { data: farm, error: farmError } = await supabase
+      .from('farms')
+      .select('*')
+      .eq('user_id', authUser.id)
+      .maybeSingle()
+
+    if (farmError) {
+      throw new Error('Failed to fetch farm data: ' + farmError.message)
+    }
+
+    // If no farm exists, return early
+    if (!farm) {
+      return { farm: null, clusters: [] }
+    }
+
+    // Fetch clusters for this farm
+    const { data: clusters, error: clustersError } = await supabase
+      .from('clusters')
+      .select('*')
+      .eq('farm_id', farm.id)
+      .order('created_at', { ascending: true })
+
+    if (clustersError) {
+      throw new Error('Failed to fetch clusters: ' + clustersError.message)
+    }
+
+    const clusterIds = (clusters || []).map(c => c.id)
+    let stageData = []
+    let harvestRecords = []
+    let lifecycleEvents = []
+
+    // Fetch related data only if we have clusters
+    if (clusterIds.length > 0) {
+      // Fetch all related data in parallel
+      const [stageDataResult, harvestResult, lifecycleResult] = await Promise.all([
+        supabase
+          .from('cluster_agronomic_config')
+          .select('*')
+          .in('cluster_id', clusterIds),
+        supabase
+          .from('harvest_records')
+          .select('*')
+          .in('cluster_id', clusterIds),
+        supabase
+          .from('cluster_lifecycle_events')
+          .select('*')
+          .in('cluster_id', clusterIds)
+          .order('actual_date', { ascending: false })
+      ])
+
+      if (stageDataResult.error) {
+        console.warn('Failed to fetch agronomic config:', stageDataResult.error.message)
+      }
+      if (harvestResult.error) {
+        console.warn('Failed to fetch harvest records:', harvestResult.error.message)
+      }
+      if (lifecycleResult.error) {
+        console.warn('Failed to fetch lifecycle events:', lifecycleResult.error.message)
+      }
+
+      stageData = stageDataResult.data || []
+      harvestRecords = harvestResult.data || []
+      lifecycleEvents = lifecycleResult.data || []
+    }
+
+    // Database to frontend stage mapping
+    // Database enum: seed-sapling, vegetative, flowering, fruiting, harvest-ready, post-harvest, dormant
+    const dbToFrontendStageMapping = {
+      'seed-sapling': 'seed-sapling',
+      'vegetative': 'tree',
+      'flowering': 'flowering',
+      'fruiting': 'ready-to-harvest', // Map fruiting to ready-to-harvest
+      'harvest-ready': 'ready-to-harvest',
+      'post-harvest': 'ready-to-harvest', // Post-harvest clusters are still harvest-ready
+      'dormant': 'seed-sapling' // Dormant clusters treated as new/seed-sapling
+    }
+
+    // Process and normalize data - map database fields to frontend fields
+    const normalizedClusters = (clusters || []).map(cluster => {
+      const clusterStageData = stageData.find(sd => sd.cluster_id === cluster.id) || {}
+      const clusterHarvest = harvestRecords.filter(hr => hr.cluster_id === cluster.id)
+      
+      // Get the latest lifecycle event for this cluster
+      const latestLifecycleEvent = lifecycleEvents.find(le => le.cluster_id === cluster.id)
+      const currentStage = latestLifecycleEvent ?
+        (dbToFrontendStageMapping[latestLifecycleEvent.stage] || latestLifecycleEvent.stage) :
+        'seed-sapling' // Default stage
+      
+      // Use mapClusterFromDb for proper field name mapping
+      const mappedCluster = mapClusterFromDb(cluster, clusterStageData)
+      
+      // Add derived fields
+      return {
+        ...mappedCluster,
+        harvestRecords: clusterHarvest,
+        plantStage: currentStage
+      }
+    })
+
+    return { farm, clusters: normalizedClusters }
+  } catch (error) {
+    console.error('Optimized fetchFarmData error:', error)
+    throw error
+  }
+}
 
 const FarmContext = createContext(null)
 const FARM_CACHE_TTL_MS = 5 * 60 * 1000
@@ -16,6 +133,9 @@ export function FarmProvider({ children }) {
   const [clusters, setClusters] = useState([])
   const [loading, setLoading] = useState(false)
   const currentCacheKey = authUser?.id ? farmCacheKey(authUser.id) : null
+  
+  // Track processing cluster IDs to prevent duplicate submissions
+  const processingClusters = useRef(new Set())
 
   const persistFarmSnapshot = useCallback(
     (nextFarm, nextClusters) => {
@@ -28,7 +148,7 @@ export function FarmProvider({ children }) {
     [currentCacheKey]
   )
 
-  const fetchFarmData = useCallback(async () => {
+  const fetchFarmData = useCallback(async (forceRefresh = false) => {
     if (!authUser) {
       clearCachedByPrefix('farm_context:')
       setFarm(null)
@@ -38,78 +158,45 @@ export function FarmProvider({ children }) {
     }
 
     const cacheKey = farmCacheKey(authUser.id)
-    const cachedSnapshot = getCached(cacheKey, FARM_CACHE_TTL_MS)
-    if (cachedSnapshot?.farm) {
-      setFarm(cachedSnapshot.farm)
-      setClusters(Array.isArray(cachedSnapshot.clusters) ? cachedSnapshot.clusters : [])
-      setLoading(false)
-    } else {
-      setLoading(true)
+    
+    // Only use cache if not forcing refresh
+    if (!forceRefresh) {
+      const cachedSnapshot = getCached(cacheKey, FARM_CACHE_TTL_MS)
+      if (cachedSnapshot?.farm) {
+        setFarm(cachedSnapshot.farm)
+        setClusters(Array.isArray(cachedSnapshot.clusters) ? cachedSnapshot.clusters : [])
+        setLoading(false)
+        return
+      }
+    }
+
+    setLoading(true)
+
+    if (!navigator.onLine) {
+      try {
+        const cachedFarms = await getCachedData('farms')
+        if (cachedFarms && cachedFarms.length > 0) {
+          const offlineFarm = cachedFarms[0]
+          setFarm(offlineFarm)
+          setClusters(offlineFarm.clusters || [])
+        }
+      } catch (err) {
+        console.error('Failed to load offline farm data:', err)
+      } finally {
+        setLoading(false)
+      }
+      return
     }
 
     try {
-      // Pre-aggregate related data in one request for faster page hydration.
-      const { data: farmRow, error: farmErr } = await supabase
-        .from('farms')
-        .select('*, clusters(*, cluster_stage_data(*), harvest_records(*))')
-        .eq('user_id', authUser.id)
-        .maybeSingle()
-
-      if (farmErr) {
-        console.error('Error fetching farm:', farmErr.message)
-        return
-      }
-
-      if (farmRow) {
-        const { clusters: clusterRows = [], ...farmOnly } = farmRow
-        const previousStageDataByClusterId = new Map(
-          (Array.isArray(cachedSnapshot?.clusters) ? cachedSnapshot.clusters : [])
-            .filter((cluster) => cluster?.id)
-            .map((cluster) => [cluster.id, cluster.stageData || null])
-        )
-
-        const clusterIds = (clusterRows || []).map((clusterRow) => clusterRow.id).filter(Boolean)
-        let directStageDataByClusterId = new Map()
-
-        if (clusterIds.length > 0) {
-          const { data: stageRows, error: stageErr } = await supabase
-            .from('cluster_stage_data')
-            .select('*')
-            .order('updated_at', { ascending: false })
-            .in('cluster_id', clusterIds)
-
-          if (stageErr) {
-            console.error('Error fetching cluster_stage_data:', stageErr.message)
-          } else {
-            const latestRowsByClusterId = new Map()
-            ;(stageRows || []).forEach((row) => {
-              if (!latestRowsByClusterId.has(row.cluster_id)) {
-                latestRowsByClusterId.set(row.cluster_id, row)
-              }
-            })
-            directStageDataByClusterId = new Map(
-              [...latestRowsByClusterId.entries()].map(([clusterId, row]) => [clusterId, mapStageDataFromDb(row)])
-            )
-          }
-        }
-
-        const normalizedClusters = [...(clusterRows || [])]
-          .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-          .map((clusterRow) =>
-            mapClusterFromDb(
-              clusterRow,
-              directStageDataByClusterId.get(clusterRow.id) ||
-                getStageDataFromNestedRow(clusterRow) ||
-                previousStageDataByClusterId.get(clusterRow.id) ||
-                null
-            )
-          )
-
-        const normalizedFarm = mapFarmFromDb(farmOnly)
-        setFarm(normalizedFarm)
-        setClusters(normalizedClusters)
-        persistFarmSnapshot(normalizedFarm, normalizedClusters)
+      const { farm, clusters } = await fetchFarmDataOptimized(authUser)
+      
+      if (farm) {
+        setFarm(farm)
+        setClusters(clusters)
+        persistFarmSnapshot(farm, clusters)
       } else {
+        // Create new farm if none exists
         const { data: newFarm, error: createErr } = await supabase
           .from('farms')
           .insert({ user_id: authUser.id, farm_name: 'My Farm' })
@@ -125,6 +212,11 @@ export function FarmProvider({ children }) {
         }
         setClusters([])
       }
+      
+      // Refresh local cache for offline use
+      if (navigator.onLine && authUser?.id) {
+        refreshLocalCache(authUser.id);
+      }
     } catch (err) {
       console.error('fetchFarmData error:', err)
     } finally {
@@ -137,10 +229,6 @@ export function FarmProvider({ children }) {
   }, [fetchFarmData])
 
   const setFarmInfo = async (farmData) => {
-    if (!farm?.id) {
-      return { success: false, error: 'Farm record is not available yet. Please refresh and try again.' }
-    }
-
     const toNumber = (value) => {
       if (value === '' || value === null || value === undefined) return null
       const parsed = Number.parseFloat(value)
@@ -153,6 +241,37 @@ export function FarmProvider({ children }) {
       return Number.isInteger(parsed) ? parsed : null
     }
 
+    // If farm doesn't exist, create it
+    if (!farm?.id) {
+      if (!authUser?.id) {
+        return { success: false, error: 'You must be logged in to register a farm.' }
+      }
+
+      const { data: newFarm, error: createError } = await supabase
+        .from('farms')
+        .insert({
+          user_id: authUser.id,
+          farm_name: farmData.farmName || 'My Farm',
+          farm_area: toNumber(farmData.farmArea),
+          elevation_m: toNumber(farmData.elevation),
+          plant_variety: farmData.plantVariety || null,
+          overall_tree_count: toInteger(farmData.overallTreeCount),
+        })
+        .select()
+        .single()
+
+      if (createError) {
+        console.error('Error creating farm:', createError.message)
+        return { success: false, error: normalizeDbError(createError, 'Unable to create farm.') }
+      }
+
+      const normalizedFarm = mapFarmFromDb(newFarm)
+      setFarm(normalizedFarm)
+      persistFarmSnapshot(normalizedFarm, clusters)
+      return { success: true, farm: normalizedFarm }
+    }
+
+    // Farm exists, update it
     const { data, error } = await supabase
       .from('farms')
       .update({
@@ -184,33 +303,177 @@ export function FarmProvider({ children }) {
 
     const areaSize = Number.parseFloat(cluster.areaSize)
     const plantCount = Number.parseInt(cluster.plantCount, 10)
+    
+    // Stronger deduplication: use cluster name + plant stage as dedup key
+    const dedupKey = `cluster:${cluster.clusterName}:${cluster.plantStage}`
+    if (processingClusters.current.has(dedupKey)) {
+      console.log('[addCluster] Already processing cluster with same name/stage, skipping:', dedupKey)
+      return { success: false, error: 'Cluster is already being processed.' }
+    }
+    processingClusters.current.add(dedupKey)
+    
+    const clientId = crypto.randomUUID() // Generate client-side ID
+    console.log('[addCluster] Generated clientId:', clientId, 'dedupKey:', dedupKey)
 
-    const { data, error } = await supabase
-      .from('clusters')
+    const clusterData = {
+      id: clientId,
+      farm_id: farm.id,
+      cluster_name: cluster.clusterName,
+      area_size_sqm: Number.isFinite(areaSize) ? areaSize : null,
+      plant_count: Number.isInteger(plantCount) ? plantCount : null,
+      variety: cluster.variety || null,
+      created_at: new Date().toISOString(),
+    }
+
+    // Map frontend stage to database stage
+    // Database enum: seed-sapling, vegetative, flowering, fruiting, harvest-ready, post-harvest, dormant
+    const stageMapping = {
+      'seed-sapling': 'seed-sapling',
+      'tree': 'vegetative',
+      'flowering': 'flowering',
+      'ready-to-harvest': 'harvest-ready'
+    }
+
+    // OFFLINE MODE: Save to sync queue and optimistic cache
+    if (!navigator.onLine) {
+      try {
+        // Save cluster to pending sync
+        await saveOfflineRecord('clusters', clusterData, 'insert')
+        
+        // If plant stage provided, save lifecycle event too
+        if (cluster.plantStage) {
+          const lifecycleData = {
+            id: crypto.randomUUID(),
+            cluster_id: clientId,
+            stage: stageMapping[cluster.plantStage] || cluster.plantStage,
+            actual_date: new Date().toISOString().split('T')[0],
+            created_at: new Date().toISOString(),
+          }
+          await saveOfflineRecord('cluster_lifecycle_events', lifecycleData, 'insert')
+        }
+        
+        // Save to optimistic cache for immediate UI display
+        const optimisticCluster = {
+          ...clusterData,
+          clusterName: cluster.clusterName,
+          areaSize: cluster.areaSize,
+          plantCount: cluster.plantCount,
+          variety: cluster.variety,
+          plantStage: cluster.plantStage || 'seed-sapling',
+          stageData: {},
+          harvestRecords: [],
+          _isOffline: true,
+          _pendingSync: true,
+        }
+        await saveOptimisticData('clusters', optimisticCluster)
+
+        // Update local state immediately (optimistic UI)
+        const next = [...clusters, optimisticCluster]
+        setClusters(next)
+        persistFarmSnapshot(farm, next)
+
+        // Clean up dedup key
+        processingClusters.current.delete(dedupKey)
+        
+        return {
+          success: true,
+          offline: true,
+          cluster: optimisticCluster,
+          message: 'Cluster saved offline. Will sync when connection is restored.'
+        }
+      } catch (err) {
+        console.error('Failed to save cluster offline:', err)
+        // Clean up dedup key even on error
+        processingClusters.current.delete(dedupKey)
+        return { success: false, error: 'Failed to save cluster offline.' }
+      }
+    }
+
+    // ONLINE MODE: Direct Supabase insert
+    try {
+      const { data, error } = await supabase
+        .from('clusters')
+        .insert(clusterData)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // If plant stage was provided, create a lifecycle event
+      if (cluster.plantStage && data?.id) {
+        const dbStage = stageMapping[cluster.plantStage] || cluster.plantStage
+        
+        const { error: lifecycleError } = await supabase
+          .from('cluster_lifecycle_events')
+          .insert({
+            cluster_id: data.id,
+            stage: dbStage,
+            actual_date: new Date().toISOString().split('T')[0],
+          })
+        
+        if (lifecycleError) {
+          console.error('Error creating lifecycle event:', lifecycleError.message)
+        }
+      }
+
+      const newCluster = mapClusterFromDb(data, null)
+      
+      // Include the plant stage if provided
+      if (cluster.plantStage) {
+        newCluster.plantStage = cluster.plantStage
+      }
+
+      setClusters((prev) => {
+        const next = [...prev, newCluster]
+        persistFarmSnapshot(farm, next)
+        return next
+      })
+
+      // Clean up dedup key
+      processingClusters.current.delete(dedupKey)
+      
+      return { success: true, cluster: newCluster }
+    } catch (error) {
+      console.error('Error adding cluster:', error)
+      // Clean up dedup key even on error
+      processingClusters.current.delete(dedupKey)
+      return { success: false, error: normalizeDbError(error, 'Unable to add cluster.') }
+    }
+  }
+
+  const ensureActiveSeason = async (clusterId) => {
+    // Check for existing active season
+    const { data: existingSeasons } = await supabase
+      .from('seasons')
+      .select('*')
+      .eq('cluster_id', clusterId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (existingSeasons?.length > 0) {
+      return existingSeasons[0]
+    }
+
+    // Create a default season
+    const currentYear = new Date().getFullYear()
+    const { data: newSeason, error } = await supabase
+      .from('seasons')
       .insert({
-        farm_id: farm.id,
-        cluster_name: cluster.clusterName,
-        area_size_sqm: Number.isFinite(areaSize) ? areaSize : null,
-        plant_count: Number.isInteger(plantCount) ? plantCount : null,
-        plant_stage: cluster.plantStage,
+        cluster_id: clusterId,
+        year: currentYear,
+        label: `Season ${currentYear}`,
+        status: 'active',
       })
       .select()
       .single()
 
     if (error) {
-      console.error('Error adding cluster:', error.message)
-      return { success: false, error: normalizeDbError(error, 'Unable to add cluster.') }
+      console.error('Error creating season:', error.message)
+      return null
     }
 
-    const newCluster = mapClusterFromDb(data, null)
-
-    setClusters((prev) => {
-      const next = [...prev, newCluster]
-      persistFarmSnapshot(farm, next)
-      return next
-    })
-
-    return { success: true, cluster: newCluster }
+    return newSeason
   }
 
   const updateCluster = async (clusterId, updates) => {
@@ -235,6 +498,7 @@ export function FarmProvider({ children }) {
       shouldSyncVariety && normalizedIncomingVariety
         ? normalizedIncomingVariety
         : currentCluster.variety || null
+    
     if (updates.clusterName !== undefined) basicFields.cluster_name = updates.clusterName
     if (updates.areaSize !== undefined) {
       const parsedArea = Number.parseFloat(updates.areaSize)
@@ -244,11 +508,83 @@ export function FarmProvider({ children }) {
       const parsedPlantCount = Number.parseInt(updates.plantCount, 10)
       basicFields.plant_count = Number.isInteger(parsedPlantCount) ? parsedPlantCount : null
     }
-    if (updates.plantStage !== undefined) basicFields.plant_stage = updates.plantStage
+    // Note: plant_stage is no longer in clusters table
     if (shouldSyncVariety) {
       basicFields.variety = resolvedVariety
     }
 
+    // OFFLINE MODE: Save to sync queue and optimistic cache
+    if (!navigator.onLine) {
+      // Only allow basic field updates offline (not complex stage/harvest data)
+      if (Object.keys(basicFields).length === 0 && !updates.plantStage) {
+        return { success: false, error: 'No valid fields to update offline.' }
+      }
+
+      try {
+        // Check if this is an offline-created cluster
+        const isOfflineCreated = currentCluster._isOffline
+        
+        const updatePayload = {
+          id: clusterId,
+          ...basicFields,
+          updated_at: new Date().toISOString(),
+        }
+        
+        await saveOfflineRecord('clusters', updatePayload, isOfflineCreated ? 'insert' : 'update')
+        
+        // Handle plant stage change offline
+        if (updates.plantStage !== undefined && updates.plantStage !== currentCluster.plantStage) {
+          // Database enum: seed-sapling, vegetative, flowering, fruiting, harvest-ready, post-harvest, dormant
+          const stageMapping = {
+            'seed-sapling': 'seed-sapling',
+            'tree': 'vegetative',
+            'flowering': 'flowering',
+            'ready-to-harvest': 'harvest-ready'
+          }
+          const dbStage = stageMapping[updates.plantStage] || updates.plantStage
+          
+          const lifecycleData = {
+            id: crypto.randomUUID(),
+            cluster_id: clusterId,
+            stage: dbStage,
+            actual_date: new Date().toISOString().split('T')[0],
+            created_at: new Date().toISOString(),
+          }
+          await saveOfflineRecord('cluster_lifecycle_events', lifecycleData, 'insert')
+        }
+        
+        // Update optimistic cache
+        const optimisticUpdate = {
+          ...currentCluster,
+          clusterName: updates.clusterName !== undefined ? updates.clusterName : currentCluster.clusterName,
+          areaSize: updates.areaSize !== undefined ? updates.areaSize : currentCluster.areaSize,
+          plantCount: updates.plantCount !== undefined ? updates.plantCount : currentCluster.plantCount,
+          variety: updates.variety !== undefined ? updates.variety : currentCluster.variety,
+          plantStage: updates.plantStage !== undefined ? updates.plantStage : currentCluster.plantStage,
+          _pendingSync: true,
+          _lastModified: Date.now(),
+        }
+        await saveOptimisticData('clusters', optimisticUpdate)
+
+        // Update local state
+        setClusters((prev) => {
+          const next = prev.map((c) => c.id === clusterId ? optimisticUpdate : c)
+          persistFarmSnapshot(farm, next)
+          return next
+        })
+
+        return {
+          success: true,
+          offline: true,
+          message: 'Changes saved offline. Will sync when connection is restored.'
+        }
+      } catch (err) {
+        console.error('Failed to update cluster offline:', err)
+        return { success: false, error: 'Failed to save changes offline.' }
+      }
+    }
+
+    // ONLINE MODE: Direct Supabase operations
     if (Object.keys(basicFields).length > 0) {
       const { error: clusterUpdateError } = await supabase
         .from('clusters')
@@ -258,6 +594,32 @@ export function FarmProvider({ children }) {
       if (clusterUpdateError) {
         console.error('Error updating cluster:', clusterUpdateError.message)
         return { success: false, error: normalizeDbError(clusterUpdateError, 'Unable to save cluster updates.') }
+      }
+    }
+
+    // Handle plant stage change via lifecycle events
+    if (updates.plantStage !== undefined && updates.plantStage !== currentCluster.plantStage) {
+      // Map frontend stage values to database enum values
+      // Database enum: seed-sapling, vegetative, flowering, fruiting, harvest-ready, post-harvest, dormant
+      const stageMapping = {
+        'seed-sapling': 'seed-sapling',
+        'tree': 'vegetative',
+        'flowering': 'flowering',
+        'ready-to-harvest': 'harvest-ready'
+      }
+      
+      const dbStage = stageMapping[updates.plantStage] || updates.plantStage
+      
+      const { error: lifecycleError } = await supabase
+        .from('cluster_lifecycle_events')
+        .insert({
+          cluster_id: clusterId,
+          stage: dbStage,
+          actual_date: new Date().toISOString().split('T')[0],
+        })
+      
+      if (lifecycleError) {
+        console.error('Error creating lifecycle event:', lifecycleError.message)
       }
     }
 
@@ -278,61 +640,37 @@ export function FarmProvider({ children }) {
         : null
 
     if (stageDataForUpsert) {
-      const dbStageData = mapStageDataToDb(stageDataForUpsert)
-      if (!dbStageData.season) {
-        dbStageData.season = inferStageSeason(stageDataForUpsert)
+      // Ensure we have an active season
+      const season = await ensureActiveSeason(clusterId)
+      if (!season) {
+        return { success: false, error: 'Unable to create or find active season for this cluster.' }
       }
 
+      const dbStageData = mapStageDataToDb(stageDataForUpsert)
+      dbStageData.season_id = season.id
+
       if (Object.keys(dbStageData).length > 0) {
-        const { data: existingRows, error: lookupError } = await supabase
-          .from('cluster_stage_data')
-          .select('id')
-          .eq('cluster_id', clusterId)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-
-        if (lookupError) {
-          console.error('Error looking up cluster_stage_data row:', lookupError.message)
-          return { success: false, error: normalizeDbError(lookupError, 'Unable to save cluster stage data.') }
-        }
-
-        const existingRowId = existingRows?.[0]?.id
-
-        if (existingRowId) {
-          const { error: updateStageError } = await supabase
-            .from('cluster_stage_data')
-            .update(dbStageData)
-            .eq('id', existingRowId)
-
-          if (updateStageError) {
-            console.error('Error updating cluster_stage_data:', updateStageError.message)
-            return { success: false, error: normalizeDbError(updateStageError, 'Unable to update cluster stage data.') }
-          }
-        } else {
-          const { error: insertStageError } = await supabase
-            .from('cluster_stage_data')
-            .insert({
-              cluster_id: clusterId,
-              ...dbStageData,
-            })
-
-          if (insertStageError) {
-            console.error('Error inserting cluster_stage_data:', insertStageError.message)
-            return { success: false, error: normalizeDbError(insertStageError, 'Unable to create cluster stage data.') }
-          }
-        }
+        // Split data into the appropriate tables
+        await upsertClusterStageData(clusterId, season.id, dbStageData)
       }
     }
 
     const harvestPayload = mapHarvestRecordFromStageData(stageDataForUpsert || mergedStageData || updates.stageData || {})
     if (harvestPayload) {
+      // Ensure cluster_id and season_id are set
+      harvestPayload.cluster_id = clusterId
+      const season = await ensureActiveSeason(clusterId)
+      if (season) {
+        harvestPayload.season_id = season.id
+      }
+
       let harvestLookup = supabase
         .from('harvest_records')
         .select('id')
         .eq('cluster_id', clusterId)
 
-      if (harvestPayload.season) {
-        harvestLookup = harvestLookup.eq('season', harvestPayload.season)
+      if (harvestPayload.season_id) {
+        harvestLookup = harvestLookup.eq('season_id', harvestPayload.season_id)
       }
 
       const { data: existingHarvestRows, error: harvestLookupError } = await harvestLookup
@@ -352,464 +690,465 @@ export function FarmProvider({ children }) {
           .update(harvestPayload)
           .eq('id', existingHarvestId)
 
-        if (updateHarvestError) {
-          console.error('Error updating harvest_records:', updateHarvestError.message)
-          return { success: false, error: normalizeDbError(updateHarvestError, 'Unable to update harvest record.') }
+        if (updateHarvestError) {console.error('Error updating harvest record:', updateHarvestError.message)
+          return { success: false, error: normalizeDbError(updateHarvestError, 'Unable to save harvest record.') }
         }
       } else {
         const { error: insertHarvestError } = await supabase
           .from('harvest_records')
-          .insert({
-            cluster_id: clusterId,
-            ...harvestPayload,
-          })
+          .insert(harvestPayload)
 
         if (insertHarvestError) {
-          console.error('Error inserting harvest_records:', insertHarvestError.message)
-          return { success: false, error: normalizeDbError(insertHarvestError, 'Unable to create harvest record.') }
+            console.error('Error inserting harvest record:', insertHarvestError.message)
+            return { success: false, error: normalizeDbError(insertHarvestError, 'Unable to save harvest record.') }
+          }
         }
+      }
+  
+      // Update local state to reflect the changes
+      setClusters((prev) => {
+        const next = prev.map((c) => {
+          if (c.id !== clusterId) return c
+          
+          // Update basic fields
+          const updated = { ...c }
+          if (updates.clusterName !== undefined) updated.cluster_name = updates.clusterName
+          if (updates.areaSize !== undefined) updated.area_size_sqm = updates.areaSize
+          if (updates.plantCount !== undefined) updated.plant_count = updates.plantCount
+          if (updates.variety !== undefined) updated.variety = updates.variety
+          if (updates.plantStage !== undefined) updated.plantStage = updates.plantStage
+          
+          // Update stageData if provided
+          if (updates.stageData) {
+            updated.stageData = { ...(c.stageData || {}), ...updates.stageData }
+          }
+          
+          return updated
+        })
+        
+        // Persist to cache
+        persistFarmSnapshot(farm, next)
+        return next
+      })
+  
+      return { success: true }
+    }
+
+  const deleteCluster = async (clusterId) => {
+    const clusterToDelete = clusters.find((c) => c.id === clusterId)
+    if (!clusterToDelete) {
+      return { success: false, error: 'Cluster not found.' }
+    }
+
+    // OFFLINE MODE
+    if (!navigator.onLine) {
+      try {
+        // If cluster was created offline, just remove from optimistic cache and pending queue
+        if (clusterToDelete._isOffline) {
+          await removePendingOperationsForRecord(clusterId)
+        } else {
+          // Queue delete operation for existing cluster
+          await saveOfflineRecord('clusters', { id: clusterId }, 'delete')
+        }
+
+        // Update local state immediately
+        setClusters((prev) => {
+          const next = prev.filter((c) => c.id !== clusterId)
+          persistFarmSnapshot(farm, next)
+          return next
+        })
+
+        return { 
+          success: true, 
+          offline: true,
+          message: 'Cluster deleted. Will sync when connection is restored.'
+        }
+      } catch (err) {
+        console.error('Failed to delete cluster offline:', err)
+        return { success: false, error: 'Failed to delete cluster offline.' }
       }
     }
 
-    setClusters((prev) => {
-      const next = prev.map((c) => {
-        if (c.id !== clusterId) return c
+    // ONLINE MODE
+    const { error } = await supabase
+      .from('clusters')
+      .delete()
+      .eq('id', clusterId)
 
-        const localStageData =
-          mergedStageData || updates.plantCount !== undefined
-            ? {
-                ...((mergedStageData || c.stageData || {})),
-                ...(shouldSyncPlantCount ? { numberOfPlants: resolvedPlantCount } : {}),
-              }
-            : undefined
-
-        const stageDataWithVariety =
-          shouldSyncVariety
-            ? {
-                ...((localStageData !== undefined ? localStageData : c.stageData) || {}),
-                variety: resolvedVariety || '',
-              }
-            : localStageData
-
-        return {
-          ...c,
-          ...(updates.clusterName !== undefined && { clusterName: updates.clusterName }),
-          ...(updates.areaSize !== undefined && { areaSize: updates.areaSize }),
-          ...(updates.plantCount !== undefined && { plantCount: updates.plantCount }),
-          ...(updates.plantStage !== undefined && { plantStage: updates.plantStage }),
-          ...(shouldSyncVariety
-            ? { variety: resolvedVariety || '' }
-            : {}),
-          ...(stageDataWithVariety !== undefined && { stageData: stageDataWithVariety }),
-        }
-      })
-      persistFarmSnapshot(farm, next)
-      return next
-    })
-
-    return { success: true }
-  }
-
-  const deleteCluster = async (clusterId) => {
-    const { error } = await supabase.from('clusters').delete().eq('id', clusterId)
     if (error) {
       console.error('Error deleting cluster:', error.message)
       return { success: false, error: normalizeDbError(error, 'Unable to delete cluster.') }
     }
+
     setClusters((prev) => {
       const next = prev.filter((c) => c.id !== clusterId)
       persistFarmSnapshot(farm, next)
       return next
     })
+
     return { success: true }
   }
 
+  const refreshClusters = async () => {
+    if (!farm?.id) return { success: false, error: 'No farm loaded.' }
+
+    try {
+      const { data, error } = await supabase
+        .from('clusters')
+        .select('*')
+        .eq('farm_id', farm.id)
+        .order('created_at', { ascending: true })
+
+      if (error) {
+        console.error('Error refreshing clusters:', error.message)
+        return { success: false, error: normalizeDbError(error, 'Unable to refresh clusters.') }
+      }
+
+      const normalized = (data || []).map((row) => mapClusterFromDb(row, null))
+      setClusters(normalized)
+      persistFarmSnapshot(farm, normalized)
+      return { success: true, clusters: normalized }
+    } catch (err) {
+      console.error('refreshClusters error:', err)
+      return { success: false, error: 'Unable to refresh clusters.' }
+    }
+  }
+
   const addHarvestRecord = async (clusterId, record) => {
-    const { data, error } = await supabase
+    // Ensure season_id is set
+    const season = await ensureActiveSeason(clusterId)
+    if (!season) {
+      return { success: false, error: 'Unable to create or find active season for this cluster.' }
+    }
+
+    // Helper function to convert null/undefined to 0 for numeric fields
+    const toDbNumber = (val) => (val === null || val === undefined || val === '') ? 0 : Number(val)
+    
+    const { error } = await supabase
       .from('harvest_records')
       .insert({
         cluster_id: clusterId,
-        season: record.season || null,
-        yield_kg: record.yieldKg || null,
-        grade_fine: record.gradeFine || null,
-        grade_premium: record.gradePremium || null,
-        grade_commercial: record.gradeCommercial || null,
+        season_id: season.id,
+        actual_harvest_date: record.actualHarvestDate || null,
+        yield_kg: Number(record.yieldKg) || 0.001, // Must be > 0 due to constraint
+        grade_fine: toDbNumber(record.gradeFine),
+        grade_premium: toDbNumber(record.gradePremium),
+        grade_commercial: toDbNumber(record.gradeCommercial),
+        grading_method: record.gradingMethod || null,
+        defect_count: toDbNumber(record.defectCount),
+        bean_moisture: toDbNumber(record.beanMoisture),
+        bean_screen_size: record.beanScreenSize || null,
         notes: record.notes || null,
       })
-      .select()
-      .single()
 
     if (error) {
       console.error('Error adding harvest record:', error.message)
       return { success: false, error: normalizeDbError(error, 'Unable to add harvest record.') }
     }
 
+    // Refresh clusters to include the new harvest record
+    await refreshClusters()
+
+    return { success: true }
+  }
+
+  const updateHarvestRecord = async (clusterId, recordId, updates) => {
+    // Helper function to convert null/undefined to 0 for numeric fields
+    const toDbNumber = (val) => (val === null || val === undefined || val === '') ? 0 : Number(val)
+    
+    const { error } = await supabase
+      .from('harvest_records')
+      .update({
+        actual_harvest_date: updates.actualHarvestDate || null,
+        yield_kg: updates.yieldKg ? Number(updates.yieldKg) : undefined, // Only update if provided
+        grade_fine: toDbNumber(updates.gradeFine),
+        grade_premium: toDbNumber(updates.gradePremium),
+        grade_commercial: toDbNumber(updates.gradeCommercial),
+        grading_method: updates.gradingMethod || null,
+        defect_count: toDbNumber(updates.defectCount),
+        bean_moisture: toDbNumber(updates.beanMoisture),
+        bean_screen_size: updates.beanScreenSize || null,
+        notes: updates.notes || null,
+      })
+      .eq('id', recordId)
+
+    if (error) {
+      console.error('Error updating harvest record:', error.message)
+      return { success: false, error: normalizeDbError(error, 'Unable to update harvest record.') }
+    }
+
+    // Refresh clusters to include the updated harvest record
+    await refreshClusters()
+
+    return { success: true }
+  }
+
+  const deleteHarvestRecord = async (clusterId, recordId) => {
+    const { error } = await supabase
+      .from('harvest_records')
+      .delete()
+      .eq('id', recordId)
+
+    if (error) {
+      console.error('Error deleting harvest record:', error.message)
+      return { success: false, error: normalizeDbError(error, 'Unable to delete harvest record.') }
+    }
+
+    // Refresh clusters to remove the deleted harvest record
+    await refreshClusters()
+
+    return { success: true }
+  }
+
+  const upsertClusterStageData = async (clusterId, seasonId, data) => {
+    try {
+      // Only include fields that have actual values (not null/undefined)
+      // This prevents overwriting existing data with nulls
+      const agronomicData = {
+        cluster_id: clusterId,
+        season_id: seasonId,
+      }
+      
+      // Only add agronomic fields if they have values
+      if (data.date_planted !== undefined && data.date_planted !== null) agronomicData.date_planted = data.date_planted
+      if (data.plant_age_months !== undefined && data.plant_age_months !== null) agronomicData.plant_age_months = data.plant_age_months
+      if (data.number_of_plants !== undefined && data.number_of_plants !== null) agronomicData.number_of_plants = data.number_of_plants
+      if (data.fertilizer_type !== undefined && data.fertilizer_type !== null) agronomicData.fertilizer_type = data.fertilizer_type
+      if (data.fertilizer_frequency !== undefined && data.fertilizer_frequency !== null) agronomicData.fertilizer_frequency = data.fertilizer_frequency
+      if (data.pesticide_type !== undefined && data.pesticide_type !== null) agronomicData.pesticide_type = data.pesticide_type
+      if (data.pesticide_frequency !== undefined && data.pesticide_frequency !== null) agronomicData.pesticide_frequency = data.pesticide_frequency
+      if (data.last_pruned_date !== undefined && data.last_pruned_date !== null) agronomicData.last_pruned_date = data.last_pruned_date
+      if (data.previous_pruned_date !== undefined && data.previous_pruned_date !== null) agronomicData.previous_pruned_date = data.previous_pruned_date
+      if (data.pruning_interval_months !== undefined && data.pruning_interval_months !== null) agronomicData.pruning_interval_months = data.pruning_interval_months
+      if (data.shade_tree_present !== undefined && data.shade_tree_present !== null) agronomicData.shade_tree_present = data.shade_tree_present
+      if (data.shade_tree_species !== undefined && data.shade_tree_species !== null) agronomicData.shade_tree_species = data.shade_tree_species
+
+      // Only save agronomic config if we have data beyond the required IDs
+      if (Object.keys(agronomicData).length > 2) {
+        // Try to update existing record first
+        const { error: updateError } = await supabase
+          .from('cluster_agronomic_config')
+          .update(agronomicData)
+          .eq('cluster_id', clusterId)
+          .eq('season_id', seasonId)
+
+        if (updateError) {
+          // If update fails (record doesn't exist), insert new record
+          const { error: insertError } = await supabase
+            .from('cluster_agronomic_config')
+            .insert(agronomicData)
+          
+          if (insertError) {
+            console.error('Error saving agronomic config:', insertError.message)
+          }
+        }
+      }
+
+      // Only save monitoring records if we have actual monitoring data
+      const hasMonitoringData = data.soil_ph !== undefined && data.soil_ph !== null ||
+                                data.avg_temp_c !== undefined && data.avg_temp_c !== null ||
+                                data.avg_rainfall_mm !== undefined && data.avg_rainfall_mm !== null ||
+                                data.avg_humidity_pct !== undefined && data.avg_humidity_pct !== null
+
+      if (hasMonitoringData) {
+        const now = new Date()
+        const month = now.getMonth() + 1 // Current month (1-12)
+        const year = now.getFullYear()
+        
+        const monitoringData = {
+          cluster_id: clusterId,
+          season_id: seasonId,
+          month: month,
+          year: year,
+        }
+        
+        if (data.soil_ph !== undefined && data.soil_ph !== null) monitoringData.soil_ph = data.soil_ph
+        if (data.avg_temp_c !== undefined && data.avg_temp_c !== null) monitoringData.avg_temp_c = data.avg_temp_c
+        if (data.avg_rainfall_mm !== undefined && data.avg_rainfall_mm !== null) monitoringData.avg_rainfall_mm = data.avg_rainfall_mm
+        if (data.avg_humidity_pct !== undefined && data.avg_humidity_pct !== null) monitoringData.avg_humidity_pct = data.avg_humidity_pct
+
+        // Try to update existing record first, then insert if not found
+        const { error: updateError } = await supabase
+          .from('cluster_monitoring_records')
+          .update(monitoringData)
+          .eq('cluster_id', clusterId)
+          .eq('season_id', seasonId)
+          .eq('month', month)
+          .eq('year', year)
+
+        if (updateError) {
+          // If update fails, try to insert
+          const { error: insertError } = await supabase
+            .from('cluster_monitoring_records')
+            .insert(monitoringData)
+          
+          if (insertError) {
+            console.error('Error saving monitoring data:', insertError.message)
+          }
+        }
+      }
+
+    } catch (err) {
+      console.error('upsertClusterStageData error:', err)
+    }
+  }
+
+  // Get a specific cluster by ID
+  const getCluster = useCallback((clusterId) => {
+    return clusters.find((c) => c.id === clusterId) || null
+  }, [clusters])
+
+  // Get all clusters (for HarvestRecords component)
+  const getAllClusters = useCallback(() => {
+    return clusters
+  }, [clusters])
+
+  // Remove clusters by their client IDs (used after sync to remove offline clusters)
+  const removeClustersByClientIds = useCallback((clientIds) => {
+    if (!clientIds || clientIds.length === 0) return
+    
     setClusters((prev) => {
-      const next = prev.map((c) =>
-        c.id === clusterId
-          ? { ...c, harvestRecords: [...(c.harvestRecords || []), data] }
-          : c
-      )
+      const next = prev.filter((c) => !clientIds.includes(c.id))
+      console.log(`Removed ${prev.length - next.length} offline clusters from state`)
       persistFarmSnapshot(farm, next)
       return next
     })
+  }, [farm, persistFarmSnapshot])
 
-    return { success: true, record: data }
-  }
-
-  const getCluster = (clusterId) => clusters.find((c) => c.id === clusterId)
-
-  const getAllClusters = () => {
-    return clusters.map((c) => ({ ...c, farmName: farm?.farm_name || 'My Farm' }))
-  }
-
-  const getHarvestReadyClusters = () => {
-    return getAllClusters().filter((c) =>
-      ['ready-to-harvest', 'flowering', 'fruit-bearing'].includes(c.plantStage)
-    )
+  const value = {
+    farm,
+    clusters,
+    loading,
+    getCluster,
+    getAllClusters,
+    refreshClusters,
+    setFarmInfo,
+    addCluster,
+    updateCluster,
+    deleteCluster,
+    addHarvestRecord,
+    updateHarvestRecord,
+    deleteHarvestRecord,
+    fetchFarmData,
+    removeClustersByClientIds,
   }
 
   return (
-    <FarmContext.Provider
-      value={{
-        farm,
-        setFarmInfo,
-        clusters,
-        loading,
-        addCluster,
-        updateCluster,
-        deleteCluster,
-        addHarvestRecord,
-        getCluster,
-        getAllClusters,
-        getHarvestReadyClusters,
-        refreshData: fetchFarmData,
-      }}
-    >
+    <FarmContext.Provider value={value}>
       {children}
     </FarmContext.Provider>
   )
 }
 
-export function useFarm() {
+// Helper functions
+export const useFarm = () => {
   const context = useContext(FarmContext)
-  if (!context) throw new Error('useFarm must be used within FarmProvider')
+  if (context === null) {
+    throw new Error('useFarm must be used within a FarmProvider')
+  }
   return context
 }
 
-function mapFarmFromDb(row) {
-  if (!row) return null
-
-  const elevationValue = row.elevation_m ?? row.elevation ?? null
-
-  return {
-    ...row,
-    elevation_m: elevationValue,
-    // Backward-compatible alias used across existing UI.
-    elevation: elevationValue,
+function normalizeDbError(error, defaultMessage) {
+  if (error?.code === '23505') {
+    return 'This name is already in use. Please choose a different one.'
   }
+  if (error?.message) {
+    return `${defaultMessage}: ${error.message}`
+  }
+  return defaultMessage
 }
 
-function mapClusterFromDb(row, stageDataOverride = null) {
-  const harvestRecords = Array.isArray(row.harvest_records)
-    ? [...row.harvest_records].sort((a, b) => new Date(b.recorded_at) - new Date(a.recorded_at))
-    : []
-  const latestHarvest = harvestRecords[0] || null
-
-  const rowVariety = row.variety || ''
-  const overrideVariety =
-    stageDataOverride && Object.prototype.hasOwnProperty.call(stageDataOverride, 'variety')
-      ? stageDataOverride.variety
-      : undefined
-  const normalizedOverrideVariety =
-    typeof overrideVariety === 'string' ? overrideVariety.trim() : overrideVariety
-
-  const mergedStageData = {
-    ...(stageDataOverride || {}),
-    variety: normalizedOverrideVariety || rowVariety,
-  }
-
-  if (latestHarvest) {
-    if (isEmptyValue(mergedStageData.currentYield)) {
-      mergedStageData.currentYield = latestHarvest.yield_kg ?? ''
-    }
-    if (isEmptyValue(mergedStageData.gradeFine)) {
-      mergedStageData.gradeFine = latestHarvest.grade_fine ?? ''
-    }
-    if (isEmptyValue(mergedStageData.gradePremium)) {
-      mergedStageData.gradePremium = latestHarvest.grade_premium ?? ''
-    }
-    if (isEmptyValue(mergedStageData.gradeCommercial)) {
-      mergedStageData.gradeCommercial = latestHarvest.grade_commercial ?? ''
-    }
-    if (isEmptyValue(mergedStageData.harvestDate)) {
-      mergedStageData.harvestDate = latestHarvest.actual_harvest_date || ''
-    }
-    if (isEmptyValue(mergedStageData.lastHarvestedDate)) {
-      mergedStageData.lastHarvestedDate = latestHarvest.actual_harvest_date || ''
-    }
-    if (isEmptyValue(mergedStageData.harvestSeason)) {
-      mergedStageData.harvestSeason = latestHarvest.season || ''
-    }
-  }
-
+function mapFarmFromDb(row) {
   return {
     id: row.id,
-    clusterName: row.cluster_name,
-    areaSize: row.area_size_sqm ?? row.area_size ?? '',
-    plantCount: row.plant_count,
-    plantStage: row.plant_stage,
-    variety: row.variety || '',
+    userId: row.user_id,
+    farmName: row.farm_name,
+    farmArea: row.farm_area,
+    elevation: row.elevation_m,
+    plantVariety: row.plant_variety,
+    overallTreeCount: row.overall_tree_count,
     createdAt: row.created_at,
-    stageData: mergedStageData,
-    harvestRecords,
+    updatedAt: row.updated_at,
   }
 }
 
-function getStageDataFromNestedRow(row) {
-  const nested = row?.cluster_stage_data
-  if (!nested) return null
-  if (Array.isArray(nested)) {
-    return nested[0] ? mapStageDataFromDb(nested[0]) : null
+function mapClusterFromDb(row, stageData) {
+  return {
+    id: row.id,
+    farmId: row.farm_id,
+    clusterName: row.cluster_name,
+    areaSize: row.area_size_sqm,
+    plantCount: row.plant_count,
+    variety: row.variety,
+    stageData: stageData || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   }
-  if (typeof nested === 'object') {
-    return mapStageDataFromDb(nested)
-  }
-  return null
 }
 
 function mapStageDataFromDb(row) {
-  const shadeTreeValue =
-    typeof row.shade_tree_present === 'boolean'
-      ? row.shade_tree_present
-        ? 'Yes'
-        : 'No'
-      : row.shade_trees || ''
+  return {
+    datePlanted: row.date_planted,
+    plantAgeMonths: row.plant_age_months,
+    numberOfPlants: row.number_of_plants,
+    fertilizerType: row.fertilizer_type,
+    fertilizerFrequency: row.fertilizer_frequency,
+    pesticideType: row.pesticide_type,
+    pesticideFrequency: row.pesticide_frequency,
+    lastPrunedDate: row.last_pruned_date,
+    previousPrunedDate: row.previous_pruned_date,
+    pruningIntervalMonths: row.pruning_interval_months,
+    shadeTreePresent: row.shade_tree_present,
+    shadeTreeSpecies: row.shade_tree_species,
+    soilPh: row.soil_ph,
+    avgTempC: row.avg_temp_c,
+    avgRainfallMm: row.avg_rainfall_mm,
+    avgHumidityPct: row.avg_humidity_pct,
+  }
+}
+
+function mapStageDataToDb(data) {
+  return {
+    date_planted: data.datePlanted,
+    plant_age_months: data.plantAgeMonths,
+    number_of_plants: data.numberOfPlants,
+    fertilizer_type: data.fertilizerType,
+    fertilizer_frequency: data.fertilizerFrequency,
+    pesticide_type: data.pesticideType,
+    pesticide_frequency: data.pesticideFrequency,
+    last_pruned_date: data.lastPrunedDate,
+    previous_pruned_date: data.previousPrunedDate,
+    pruning_interval_months: data.pruningIntervalMonths,
+    shade_tree_present: data.shadeTreePresent,
+    shade_tree_species: data.shadeTreeSpecies,
+    soil_ph: data.soilPh,
+    avg_temp_c: data.avgTempC,
+    avg_rainfall_mm: data.avgRainfallMm,
+    avg_humidity_pct: data.avgHumidityPct,
+  }
+}
+
+function mapHarvestRecordFromStageData(data) {
+  // Only return harvest data if there's actual yield data to save
+  // This prevents trying to save empty harvest records when editing other sections
+  if (!data || data.yieldKg === undefined || data.yieldKg === null || data.yieldKg === '') {
+    return null
+  }
 
   return {
-    datePlanted: row.date_planted || '',
-    numberOfPlants: row.number_of_plants ?? '',
-    fertilizerFrequency: fromFrequencyEnum(row.fertilizer_frequency),
-    fertilizerType: fromTypeEnum(row.fertilizer_type),
-    pesticideType: fromTypeEnum(row.pesticide_type),
-    pesticideFrequency: fromFrequencyEnum(row.pesticide_frequency),
-    monthlyTemperature: row.avg_temp_c ?? row.monthly_temperature ?? '',
-    rainfall: row.avg_rainfall_mm ?? row.rainfall ?? '',
-    humidity: row.avg_humidity_pct ?? row.humidity ?? '',
-    soilPh: row.soil_ph ?? '',
-    lastHarvestedDate: row.actual_harvest_date || row.last_harvested_date || '',
-    previousYield: row.pre_yield_kg ?? row.previous_yield ?? '',
-    lastPrunedDate: row.last_pruned_date || '',
-    shadeTrees: shadeTreeValue,
-    estimatedFloweringDate: row.estimated_flowering_date || '',
-    actualFloweringDate: row.actual_flowering_date || '',
-    harvestDate: row.actual_harvest_date || row.harvest_date || '',
-    predictedYield: row.predicted_yield ?? '',
-    harvestSeason: row.season || row.harvest_season || '',
-    currentYield: row.current_yield ?? '',
-    gradeFine: row.previous_fine_pct ?? row.grade_fine ?? '',
-    gradePremium: row.previous_premium_pct ?? row.grade_premium ?? '',
-    gradeCommercial: row.previous_commercial_pct ?? row.grade_commercial ?? '',
-    estimatedHarvestDate: row.estimated_harvest_date || '',
-    preLastHarvestDate: row.pre_last_harvest_date || '',
-    preTotalTrees: row.pre_total_trees ?? '',
-    preYieldKg: row.pre_yield_kg ?? '',
-    preGradeFine: row.pre_grade_fine ?? '',
-    preGradePremium: row.pre_grade_premium ?? '',
-    preGradeCommercial: row.pre_grade_commercial ?? '',
-    postCurrentYield: row.post_current_yield ?? '',
-    postGradeFine: row.post_grade_fine ?? '',
-    postGradePremium: row.post_grade_premium ?? '',
-    postGradeCommercial: row.post_grade_commercial ?? '',
-    defectCount: row.defect_count ?? '',
-    beanMoisture: row.bean_moisture ?? '',
-    beanScreenSize: row.bean_screen_size || '',
+    yield_kg: data.yieldKg,
+    grade_fine: data.gradeFine,
+    grade_premium: data.gradePremium,
+    grade_commercial: data.gradeCommercial,
+    grading_method: data.gradingMethod,
+    defect_count: data.defectCount,
+    bean_moisture: data.beanMoisture,
+    bean_screen_size: data.beanScreenSize,
+    notes: data.notes,
   }
 }
 
-function mapStageDataToDb(sd = {}) {
-  const num = (v) => (v === '' || v === null || v === undefined ? null : Number.parseFloat(v))
-  const int = (v) => (v === '' || v === null || v === undefined ? null : Number.parseInt(v, 10))
-  const str = (v) => (v === '' || v === null || v === undefined ? null : String(v).trim())
-  const dt = (v) => (v === '' || v === null || v === undefined ? null : v)
-
-  const mapped = {}
-  const has = (key) => Object.prototype.hasOwnProperty.call(sd, key)
-
-  if (has('datePlanted')) mapped.date_planted = dt(sd.datePlanted)
-  if (has('numberOfPlants')) mapped.number_of_plants = int(sd.numberOfPlants)
-  if (has('fertilizerType')) mapped.fertilizer_type = toTypeEnum(sd.fertilizerType)
-  if (has('fertilizerFrequency')) mapped.fertilizer_frequency = toFrequencyEnum(sd.fertilizerFrequency)
-  if (has('pesticideType')) mapped.pesticide_type = toTypeEnum(sd.pesticideType)
-  if (has('pesticideFrequency')) mapped.pesticide_frequency = toFrequencyEnum(sd.pesticideFrequency)
-  if (has('lastPrunedDate')) mapped.last_pruned_date = dt(sd.lastPrunedDate)
-  if (has('soilPh')) mapped.soil_ph = num(sd.soilPh)
-  if (has('monthlyTemperature')) mapped.avg_temp_c = num(sd.monthlyTemperature)
-  if (has('rainfall')) mapped.avg_rainfall_mm = num(sd.rainfall)
-  if (has('humidity')) mapped.avg_humidity_pct = num(sd.humidity)
-  if (has('estimatedFloweringDate')) mapped.estimated_flowering_date = dt(sd.estimatedFloweringDate)
-  if (has('actualFloweringDate')) mapped.actual_flowering_date = dt(sd.actualFloweringDate)
-  if (has('estimatedHarvestDate')) mapped.estimated_harvest_date = dt(sd.estimatedHarvestDate)
-  if (has('predictedYield')) mapped.predicted_yield = num(sd.predictedYield)
-  if (has('preLastHarvestDate')) mapped.pre_last_harvest_date = dt(sd.preLastHarvestDate)
-  if (has('preTotalTrees')) mapped.pre_total_trees = int(sd.preTotalTrees)
-  if (has('preYieldKg')) mapped.pre_yield_kg = num(sd.preYieldKg)
-  if (has('preGradeFine')) mapped.pre_grade_fine = num(sd.preGradeFine)
-  if (has('preGradePremium')) mapped.pre_grade_premium = num(sd.preGradePremium)
-  if (has('preGradeCommercial')) mapped.pre_grade_commercial = num(sd.preGradeCommercial)
-  if (has('defectCount')) mapped.defect_count = int(sd.defectCount)
-  if (has('beanMoisture')) mapped.bean_moisture = num(sd.beanMoisture)
-  if (has('beanScreenSize')) mapped.bean_screen_size = str(sd.beanScreenSize)
-
-  // Harvest date fields map to actual_harvest_date.
-  if (has('lastHarvestedDate')) mapped.actual_harvest_date = dt(sd.lastHarvestedDate)
-  if (has('harvestDate')) mapped.actual_harvest_date = dt(sd.harvestDate)
-
-  // Grade percentages map to "previous_*_pct" columns in current schema.
-  if (has('gradeFine')) mapped.previous_fine_pct = num(sd.gradeFine)
-  if (has('gradePremium')) mapped.previous_premium_pct = num(sd.gradePremium)
-  if (has('gradeCommercial')) mapped.previous_commercial_pct = num(sd.gradeCommercial)
-
-  if (has('previousYield')) mapped.pre_yield_kg = num(sd.previousYield)
-  if (has('harvestSeason')) mapped.season = str(sd.harvestSeason)
-  if (has('shadeTrees')) mapped.shade_tree_present = normalizeShadeTreeBoolean(sd.shadeTrees)
-
-  return mapped
-}
-
-function normalizeShadeTreeBoolean(value) {
-  if (typeof value === 'boolean') return value
-  if (typeof value !== 'string') return null
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'yes' || normalized === 'true') return true
-  if (normalized === 'no' || normalized === 'false') return false
+function getStageDataFromNestedRow(clusterRow) {
   return null
-}
-
-function toFrequencyEnum(value) {
-  if (value === '' || value === null || value === undefined) return null
-
-  const normalized = String(value).trim().toLowerCase()
-  if (normalized.startsWith('often')) return 'often'
-  if (normalized.startsWith('sometimes')) return 'sometimes'
-  if (normalized.startsWith('rarely')) return 'rarely'
-  if (normalized.startsWith('never')) return 'never'
-
-  // Unknown values are dropped instead of causing enum write failures.
-  return null
-}
-
-function fromFrequencyEnum(value) {
-  if (value === '' || value === null || value === undefined) return ''
-
-  const normalized = String(value).trim().toLowerCase()
-  if (normalized === 'often') return 'Often'
-  if (normalized === 'sometimes') return 'Sometimes'
-  if (normalized === 'rarely') return 'Rarely'
-  if (normalized === 'never') return 'Never'
-
-  return String(value)
-}
-
-function toTypeEnum(value) {
-  if (value === '' || value === null || value === undefined) return null
-
-  const normalized = String(value)
-    .trim()
-    .toLowerCase()
-    .replace(/[_\s]+/g, '-')
-
-  if (normalized === 'organic') return 'organic'
-  if (normalized === 'non-organic') return 'non-organic'
-
-  // Unknown values are dropped instead of causing enum write failures.
-  return null
-}
-
-function fromTypeEnum(value) {
-  if (value === '' || value === null || value === undefined) return ''
-
-  const normalized = String(value)
-    .trim()
-    .toLowerCase()
-    .replace(/[_\s]+/g, '-')
-
-  if (normalized === 'organic') return 'Organic'
-  if (normalized === 'non-organic') return 'Non-Organic'
-
-  return String(value)
-}
-
-function mapHarvestRecordFromStageData(sd = {}) {
-  const has = (key) => Object.prototype.hasOwnProperty.call(sd, key)
-  const hasRelevantHarvestField =
-    has('currentYield') ||
-    has('gradeFine') ||
-    has('gradePremium') ||
-    has('gradeCommercial') ||
-    has('harvestDate') ||
-    has('lastHarvestedDate') ||
-    has('harvestSeason')
-
-  if (!hasRelevantHarvestField) return null
-
-  const parseNum = (value) => {
-    if (value === '' || value === null || value === undefined) return null
-    const parsed = Number.parseFloat(value)
-    return Number.isFinite(parsed) ? parsed : null
-  }
-
-  const payload = {
-    season: has('harvestSeason') ? (sd.harvestSeason || null) : null,
-    actual_harvest_date: has('harvestDate')
-      ? (sd.harvestDate || null)
-      : has('lastHarvestedDate')
-        ? (sd.lastHarvestedDate || null)
-        : null,
-    yield_kg: has('currentYield') ? parseNum(sd.currentYield) : null,
-    grade_fine: has('gradeFine') ? parseNum(sd.gradeFine) : null,
-    grade_premium: has('gradePremium') ? parseNum(sd.gradePremium) : null,
-    grade_commercial: has('gradeCommercial') ? parseNum(sd.gradeCommercial) : null,
-  }
-
-  const hasAnyValue =
-    payload.season !== null ||
-    payload.actual_harvest_date !== null ||
-    payload.yield_kg !== null ||
-    payload.grade_fine !== null ||
-    payload.grade_premium !== null ||
-    payload.grade_commercial !== null
-
-  return hasAnyValue ? payload : null
-}
-
-function inferStageSeason(stageData = {}) {
-  const explicit = typeof stageData.harvestSeason === 'string' ? stageData.harvestSeason.trim() : ''
-  if (explicit) return explicit
-
-  const harvestDate = stageData.harvestDate || stageData.lastHarvestedDate || stageData.estimatedHarvestDate
-  if (typeof harvestDate === 'string' && harvestDate.length >= 4) {
-    return harvestDate.slice(0, 4)
-  }
-
-  return `Season ${new Date().getFullYear()}`
-}
-
-function isEmptyValue(value) {
-  return value === '' || value === null || value === undefined
-}
-
-function normalizeDbError(error, fallbackMessage) {
-  const rawMessage = error?.message || fallbackMessage
-  if (!rawMessage) return 'Database operation failed.'
-
-  if (rawMessage.includes('violates row-level security policy')) {
-    return 'Permission denied by database policy. Please check RLS policies for this table.'
-  }
-
-  if (rawMessage.includes('column')) {
-    return `Database schema mismatch: ${rawMessage}`
-  }
-
-  return rawMessage
 }

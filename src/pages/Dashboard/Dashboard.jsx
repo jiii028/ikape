@@ -215,12 +215,22 @@ export default function Dashboard() {
                 return (
                   <div
                     key={cluster.id}
-                    className="farm-card"
+                    className={`farm-card ${cluster._isOffline ? 'farm-card--offline' : ''} ${cluster._pendingSync ? 'farm-card--pending' : ''}`}
                     style={{ borderLeft: `4px solid ${config.color}` }}
                     onClick={() => navigate(`/clusters/${cluster.id}/overview`)}
                   >
                     <div className="farm-card-header">
                       <h3>{cluster.clusterName}</h3>
+                      {cluster._isOffline && (
+                        <span className="offline-badge" title="Created offline - pending sync">
+                          ⏳ Offline
+                        </span>
+                      )}
+                      {cluster._pendingSync && !cluster._isOffline && (
+                        <span className="pending-badge" title="Has unsaved changes">
+                          ✏️ Pending
+                        </span>
+                      )}
                       <button
                         className="tile-action-btn"
                         title="Delete"

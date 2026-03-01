@@ -1,4 +1,4 @@
-const ML_API_BASE = (import.meta.env.VITE_ML_API_URL || 'http://localhost:8000').replace(/\/+$/, '')
+const ML_API_BASE = (import.meta.env.VITE_ML_API_URL || '').replace(/\/+$/, '')
 
 async function postJson(path, payload) {
   const response = await fetch(`${ML_API_BASE}${path}`, {
@@ -22,9 +22,9 @@ async function postJson(path, payload) {
 }
 
 export async function getPrediction(features) {
-  return postJson('/predict', { features })
+  return postJson('/api/predict', { features })
 }
 
 export async function getBatchPredictions(samples) {
-  return postJson('/predict/batch', { samples })
+  return postJson('/api/predict/batch', { samples })
 }

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useFarm } from '../context/FarmContext'
 import { supabase } from '../lib/supabase'
+import { SyncStatus } from '../components/SyncStatus'
 import {
   LayoutDashboard,
   BarChart3,
@@ -555,6 +556,7 @@ export default function DashboardLayout() {
             )}
           </div>
           <div className="topbar-right">
+            <SyncStatus />
             <div className="notification-menu" ref={notificationMenuRef}>
               <button
                 type="button"

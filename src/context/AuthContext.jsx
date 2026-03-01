@@ -34,8 +34,9 @@ export function AuthProvider({ children }) {
   // Fetch user profile from the users table
   const fetchProfile = async (userId) => {
     try {
+      // Use a more aggressive timeout for profile fetching
       const timeoutPromise = new Promise((resolve) =>
-        setTimeout(() => resolve({ data: null, error: null, timedOut: true }), 10000)
+        setTimeout(() => resolve({ data: null, error: null, timedOut: true }), 5000)
       )
 
       const fetchPromise = supabase
@@ -47,23 +48,32 @@ export function AuthProvider({ children }) {
       const { data, error: err, timedOut } = await Promise.race([fetchPromise, timeoutPromise])
 
       if (timedOut) {
-        console.warn('fetchProfile timed out after 10s')
-        return null
+        console.warn('fetchProfile timed out after 5s - using cached profile')
+        // Try to get profile from localStorage as fallback
+        const cached = loadUserSession()
+        return cached?.profile || null
       }
 
       if (err) {
         console.error('Error fetching profile:', err.message)
-        return null
+        // Try cached profile as fallback
+        const cached = loadUserSession()
+        return cached?.profile || null
       }
 
       if (!data) {
         console.warn('No profile found for user')
+        // Try cached profile as fallback
+        const cached = loadUserSession()
+        return cached?.profile || null
       }
 
       return data
     } catch (error) {
       console.warn('fetchProfile failed:', error.message)
-      return null
+      // Try cached profile as fallback
+      const cached = loadUserSession()
+      return cached?.profile || null
     }
   }
 

@@ -219,7 +219,12 @@ export default function AdminDashboard() {
             const [usersRes, farmsRes, clustersRes, harvestsRes] = await Promise.all([
                 supabase.from('users').select('id').eq('role', 'farmer'),
                 supabase.from('farms').select('id, farm_name, farm_area, user_id'),
-                supabase.from('clusters').select('*, cluster_stage_data(*), farms!inner(farm_name, user_id)'),
+                supabase.from('clusters').select(`
+                    *,
+                    cluster_stage_data_compat(*),
+                    cluster_lifecycle_events(*),
+                    farms(farm_name, user_id)
+                `),
                 supabase.from('harvest_records').select('*'),
             ])
 
@@ -236,7 +241,8 @@ export default function AdminDashboard() {
             )
             const clusters = (clustersRes.data || []).map((c) => ({
                 ...c,
-                stageData: pickLatestStageData(c.cluster_stage_data),
+                stageData: pickLatestStageData(c.cluster_stage_data_compat),
+                plantStage: c.cluster_lifecycle_events?.[c.cluster_lifecycle_events.length - 1]?.stage || c.plant_stage || 'seed-sapling',
             }))
             const harvests = harvestsRes.data || []
             const clusterActualYieldMap = new Map()

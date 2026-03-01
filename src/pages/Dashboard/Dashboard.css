@@ -584,3 +584,34 @@
     font-size: 15px;
   }
 }
+
+/* Offline Indicator Styles */
+.farm-card--offline {
+  border-style: dashed !important;
+  background-color: #fffbeb !important;
+}
+
+.farm-card--pending {
+  border-style: dashed !important;
+  background-color: #eff6ff !important;
+}
+
+.offline-badge {
+  background-color: #f59e0b;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pending-badge {
+  background-color: #3b82f6;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
