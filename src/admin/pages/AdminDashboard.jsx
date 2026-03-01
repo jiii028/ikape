@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { getCached, setCached } from '../../lib/queryCache'
-import { fetchOverview } from '../../api/analytics'
+import { fetchAdminData, fetchOverview } from '../../api/analytics'
 import { getBatchPredictions } from '../../api/predict'
 import {
     Users,
@@ -28,12 +28,22 @@ import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
     ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar,
 } from 'recharts'
-import './AdminDashboard.css'
 
 const RISK_COLORS = { Low: '#22c55e', Moderate: '#f59e0b', High: '#f97316', Critical: '#ef4444' }
 const GRADE_COLORS = ['#22c55e', '#3b82f6', '#f59e0b']
 const ADMIN_DASHBOARD_CACHE_KEY = 'admin_dashboard:overview:v3'
 const ADMIN_DASHBOARD_CACHE_TTL_MS = 2 * 60 * 1000
+const DATA_MODE = (import.meta.env.VITE_DATA_MODE || 'supabase').toLowerCase()
+const USE_SYNTHETIC_DATA = DATA_MODE === 'synthetic'
+const FETCH_TIMEOUT_MS = 15000
+
+function withTimeout(promise, ms, label) {
+    let timeoutId
+    const timeout = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    })
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId))
+}
 
 const INTERVENTION_BY_RISK = {
     Critical: {
@@ -71,22 +81,96 @@ function toNumber(value, fallback = 0) {
     return Number.isFinite(parsed) ? parsed : fallback
 }
 
-function mapClusterToModelFeatures(cluster) {
+function yearsSince(dateValue) {
+    if (!dateValue) return 0
+    const date = new Date(dateValue)
+    if (Number.isNaN(date.getTime())) return 0
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    if (diffMs <= 0) return 0
+    return diffMs / (1000 * 60 * 60 * 24 * 365.2425)
+}
+
+function monthsSince(dateValue) {
+    if (!dateValue) return 0
+    const date = new Date(dateValue)
+    if (Number.isNaN(date.getTime())) return 0
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    if (diffMs <= 0) return 0
+    return diffMs / (1000 * 60 * 60 * 24 * 30.4375)
+}
+
+function normalizeFloodRisk(value) {
+    const text = String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-')
+    if (['none', 'low', 'medium', 'high', 'severe'].includes(text)) return text
+    return ''
+}
+
+function normalizeBeanScreenSize(value) {
+    const text = String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-')
+    if (['extra-small', 'small', 'medium', 'large', 'extra-large'].includes(text)) return text
+    return ''
+}
+
+function buildFarmDerivedStats(clusters) {
+    const byFarm = new Map()
+    clusters.forEach((cluster) => {
+        const farmId = String(cluster?.farm_id || cluster?.farms?.id || '')
+        if (!farmId) return
+        const plants = toNumber(cluster?.stageData?.number_of_plants ?? cluster?.stageData?.numberOfPlants ?? cluster?.plant_count)
+        const entry = byFarm.get(farmId) || { clusterCount: 0, totalPlants: 0 }
+        entry.clusterCount += 1
+        entry.totalPlants += plants
+        byFarm.set(farmId, entry)
+    })
+    return byFarm
+}
+
+function getLatestStageData(clusterStageData) {
+    if (Array.isArray(clusterStageData)) {
+        if (!clusterStageData.length) return {}
+        return [...clusterStageData].sort(
+            (a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0)
+        )[0] || {}
+    }
+    return clusterStageData || {}
+}
+
+function mapClusterToModelFeatures(cluster, farmStatsById) {
     const sd = cluster?.stageData || {}
+    const farmId = String(cluster?.farm_id || cluster?.farms?.id || '')
+    const clusterId = String(cluster?.id || '')
+    const farmStats = farmStatsById.get(farmId) || {}
+    const numberOfPlants = toNumber(sd.number_of_plants ?? sd.numberOfPlants ?? cluster?.plant_count)
+    const farmTotalPlants = toNumber(cluster?.farms?.overall_tree_count ?? farmStats.totalPlants)
+    const clusterAreaSqm = toNumber(cluster?.area_size_sqm ?? cluster?.areaSize)
+
     return {
-        plant_age_months: toNumber(sd.plant_age_months ?? sd.plantAgeMonths),
-        number_of_plants: toNumber(sd.number_of_plants ?? cluster?.plant_count),
+        farm_id: farmId,
+        cluster_id: clusterId,
+        farm_size_ha: toNumber(cluster?.farms?.farm_area),
+        elevation_m: toNumber(cluster?.farms?.elevation_m),
+        farm_cluster_count: toNumber(farmStats.clusterCount),
+        cluster_plant_share_pct:
+            farmTotalPlants > 0 ? (numberOfPlants / farmTotalPlants) * 100 : 0,
+        cluster_tree_density_per_sqm:
+            clusterAreaSqm > 0 ? numberOfPlants / clusterAreaSqm : 0,
+        plant_age_years: toNumber(sd.plant_age_years ?? sd.plantAgeYears, yearsSince(sd.date_planted ?? sd.datePlanted)),
+        number_of_plants: numberOfPlants,
         fertilizer_type: sd.fertilizer_type ?? sd.fertilizerType ?? '',
         fertilizer_frequency: sd.fertilizer_frequency ?? sd.fertilizerFrequency ?? '',
         pesticide_type: sd.pesticide_type ?? sd.pesticideType ?? '',
         pesticide_frequency: sd.pesticide_frequency ?? sd.pesticideFrequency ?? '',
-        pruning_interval_months: toNumber(sd.pruning_interval_months ?? sd.pruningIntervalMonths),
+        pruning_interval_months: toNumber(sd.pruning_interval_months ?? sd.pruningIntervalMonths, monthsSince(sd.last_pruned_date ?? sd.lastPrunedDate)),
         shade_tree_present: sd.shade_tree_present ?? sd.shadeTrees ?? '',
         soil_ph: toNumber(sd.soil_ph ?? sd.soilPh),
         avg_temp_c: toNumber(sd.avg_temp_c ?? sd.monthly_temperature ?? sd.monthlyTemperature),
         avg_rainfall_mm: toNumber(sd.avg_rainfall_mm ?? sd.rainfall),
         avg_humidity_pct: toNumber(sd.avg_humidity_pct ?? sd.humidity),
-        pre_total_trees: toNumber(sd.pre_total_trees ?? sd.preTotalTrees ?? cluster?.plant_count),
+        flood_risk_level: normalizeFloodRisk(sd.flood_risk_level ?? sd.floodRiskLevel),
+        flood_events_count: toNumber(sd.flood_events_count ?? sd.floodEventsCount),
+        pre_total_trees: toNumber(sd.pre_total_trees ?? sd.preTotalTrees ?? numberOfPlants),
         pre_yield_kg: toNumber(sd.pre_yield_kg ?? sd.preYieldKg ?? sd.previous_yield ?? sd.previousYield),
         pre_grade_fine: toNumber(sd.pre_grade_fine ?? sd.preGradeFine),
         pre_grade_premium: toNumber(sd.pre_grade_premium ?? sd.preGradePremium),
@@ -94,6 +178,16 @@ function mapClusterToModelFeatures(cluster) {
         previous_fine_pct: toNumber(sd.previous_fine_pct ?? sd.grade_fine ?? sd.gradeFine),
         previous_premium_pct: toNumber(sd.previous_premium_pct ?? sd.grade_premium ?? sd.gradePremium),
         previous_commercial_pct: toNumber(sd.previous_commercial_pct ?? sd.grade_commercial ?? sd.gradeCommercial),
+        bean_size_mm: toNumber(sd.bean_size_mm ?? sd.beanSizeMm),
+        bean_screen_size: normalizeBeanScreenSize(sd.bean_screen_size ?? sd.beanScreenSize),
+        bean_moisture: toNumber(sd.bean_moisture ?? sd.beanMoisture),
+        defect_black_pct: toNumber(sd.defect_black_pct ?? sd.defectBlackPct),
+        defect_mold_infested_pct: toNumber(sd.defect_mold_infested_pct ?? sd.defectMoldInfestedPct),
+        defect_immature_pct: toNumber(sd.defect_immature_pct ?? sd.defectImmaturePct),
+        defect_broken_pct: toNumber(sd.defect_broken_pct ?? sd.defectBrokenPct),
+        defect_dried_cherries_pct: toNumber(sd.defect_dried_cherries_pct ?? sd.defectDriedCherriesPct),
+        defect_foreign_matter_pct: toNumber(sd.defect_foreign_matter_pct ?? sd.defectForeignMatterPct),
+        pns_total_defects_pct: toNumber(sd.pns_total_defects_pct ?? sd.pnsTotalDefectsPct),
     }
 }
 
@@ -118,6 +212,7 @@ export default function AdminDashboard() {
     const [sortDir, setSortDir] = useState('desc')
     const [selectedRows, setSelectedRows] = useState([])
     const [loading, setLoading] = useState(true)
+    const [pageError, setPageError] = useState('')
 
     // Dialog states
     const [bulkActionDialog, setBulkActionDialog] = useState({ open: false, action: '', count: 0 })
@@ -160,6 +255,7 @@ export default function AdminDashboard() {
     }, [])
 
     const fetchDashboardData = async () => {
+        setPageError('')
         const cached = getCached(ADMIN_DASHBOARD_CACHE_KEY, ADMIN_DASHBOARD_CACHE_TTL_MS)
         if (cached) {
             setStats(cached.stats)
@@ -175,24 +271,49 @@ export default function AdminDashboard() {
         }
 
         try {
-            const [usersRes, farmsRes, clustersRes, harvestsRes] = await Promise.all([
-                supabase.from('users').select('id').eq('role', 'farmer'),
-                supabase.from('farms').select('id, farm_name, farm_area, user_id'),
-                supabase.from('clusters').select('*, cluster_stage_data(*), farms!inner(farm_name, user_id)'),
-                supabase.from('harvest_records').select('*'),
-            ])
+            let users = []
+            let farms = []
+            let clusters = []
+            let harvests = []
 
-            if (usersRes.error || farmsRes.error || clustersRes.error || harvestsRes.error) {
-                throw usersRes.error || farmsRes.error || clustersRes.error || harvestsRes.error
+            if (USE_SYNTHETIC_DATA) {
+                const synthetic = await withTimeout(fetchAdminData(), FETCH_TIMEOUT_MS, 'Synthetic admin dataset fetch')
+                users = synthetic?.data?.users || []
+                farms = synthetic?.data?.farms || []
+                clusters = (synthetic?.data?.clusters || []).map((c) => ({
+                    ...c,
+                    stageData: getLatestStageData(c.cluster_stage_data),
+                }))
+                harvests = synthetic?.data?.harvest_records || []
+            } else {
+                const [usersRes, farmsRes, clustersRes, harvestsRes] = await withTimeout(Promise.all([
+                    supabase
+                        .from('users')
+                        .select('id, first_name, last_name, contact_number, municipality, province')
+                        .eq('role', 'farmer'),
+                    supabase.from('farms').select('id, farm_name, farm_area, user_id'),
+                    supabase
+                        .from('clusters')
+                        .select('*, cluster_stage_data(*), farms!inner(id, farm_name, user_id, farm_area, elevation_m, overall_tree_count, users(first_name, last_name, contact_number, municipality, province))'),
+                    supabase.from('harvest_records').select('*'),
+                ]), FETCH_TIMEOUT_MS, 'Supabase dashboard query')
+
+                if (usersRes.error || farmsRes.error || clustersRes.error || harvestsRes.error) {
+                    throw usersRes.error || farmsRes.error || clustersRes.error || harvestsRes.error
+                }
+
+                users = usersRes.data || []
+                farms = farmsRes.data || []
+                clusters = (clustersRes.data || []).map((c) => ({
+                    ...c,
+                    stageData: getLatestStageData(c.cluster_stage_data),
+                }))
+                harvests = harvestsRes.data || []
             }
 
-            const users = usersRes.data || []
-            const farms = farmsRes.data || []
-            const clusters = (clustersRes.data || []).map((c) => ({
-                ...c,
-                stageData: Array.isArray(c.cluster_stage_data) ? c.cluster_stage_data[0] : c.cluster_stage_data,
-            }))
-            const harvests = harvestsRes.data || []
+            const farmStatsById = buildFarmDerivedStats(clusters)
+            const farmsById = new Map((farms || []).map((farmRow) => [String(farmRow.id), farmRow]))
+            const usersById = new Map((users || []).map((userRow) => [String(userRow.id), userRow]))
             const clusterActualYieldMap = new Map()
             const predictionByClusterId = new Map()
 
@@ -206,10 +327,14 @@ export default function AdminDashboard() {
             try {
                 const samples = clusters.map((cluster) => ({
                     id: String(cluster.id),
-                    features: mapClusterToModelFeatures(cluster),
+                    features: mapClusterToModelFeatures(cluster, farmStatsById),
                 }))
                 if (samples.length > 0) {
-                    const batchResult = await getBatchPredictions(samples)
+                    const batchResult = await withTimeout(
+                        getBatchPredictions(samples),
+                        FETCH_TIMEOUT_MS,
+                        'Batch prediction'
+                    )
                     ;(batchResult?.predictions || []).forEach((item) => {
                         if (item?.id === undefined || !item?.prediction) return
                         predictionByClusterId.set(String(item.id), item.prediction)
@@ -304,10 +429,31 @@ export default function AdminDashboard() {
             ]
             setYieldTrend(nextYieldTrend)
 
-            // Critical farms: clusters with potential issues
+            const resolveFarmForCluster = (cluster) => {
+                if (cluster?.farms) return cluster.farms
+                const farmId = String(cluster?.farm_id || '')
+                return farmsById.get(farmId) || null
+            }
+
+            const resolveFarmerForCluster = (cluster, farmRecord) => {
+                const nestedUser = farmRecord?.users
+                if (Array.isArray(nestedUser)) return nestedUser[0] || null
+                if (nestedUser && typeof nestedUser === 'object') return nestedUser
+                const userId = farmRecord?.user_id
+                if (!userId) return null
+                return usersById.get(String(userId)) || null
+            }
+
+            // Critical farms: clusters with potential issues + farmer context
             const nextCriticalFarms = clusters.map((c) => {
                 const sd = c.stageData
                 if (!sd) return null
+                const farmRecord = resolveFarmForCluster(c) || {}
+                const farmerRecord = resolveFarmerForCluster(c, farmRecord) || {}
+                const farmerName = [farmerRecord.first_name, farmerRecord.last_name]
+                    .filter(Boolean)
+                    .join(' ')
+                    .trim() || 'Unknown Farmer'
                 const predicted = getPredictedForCluster(c)
                 const actual = clusterActualYieldMap.get(c.id) || parseFloat(sd.current_yield || 0)
                 const prev = parseFloat((sd.pre_yield_kg ?? sd.previous_yield) || 0)
@@ -320,7 +466,9 @@ export default function AdminDashboard() {
 
                 return {
                     id: c.id,
-                    farmName: c.farms?.farm_name || 'Unknown Farm',
+                    farmName: farmRecord.farm_name || c.farms?.farm_name || 'Unknown Farm',
+                    farmerName,
+                    farmerContact: farmerRecord.contact_number || 'N/A',
                     clusterName: c.cluster_name,
                     riskLevel: risk,
                     yieldDecline: parseFloat(decline),
@@ -394,6 +542,7 @@ export default function AdminDashboard() {
             })
         } catch (err) {
             console.error('Error fetching dashboard data:', err)
+            setPageError(err?.message || 'Unable to load dashboard data.')
         }
         setLoading(false)
     }
@@ -493,6 +642,7 @@ export default function AdminDashboard() {
     const visibleCriticalFarms = dashboardQuery
         ? sortedCriticalFarms.filter((farm) =>
             (farm.farmName || '').toLowerCase().includes(dashboardQuery) ||
+            (farm.farmerName || '').toLowerCase().includes(dashboardQuery) ||
             (farm.clusterName || '').toLowerCase().includes(dashboardQuery) ||
             (farm.plantStage || '').toLowerCase().includes(dashboardQuery)
         )
@@ -519,6 +669,12 @@ export default function AdminDashboard() {
                     <Download size={16} /> Export Report
                 </button>
             </div>
+
+            {pageError && (
+                <div className="cd-form-error" style={{ marginBottom: 12 }}>
+                    Dashboard data load issue: {pageError}
+                </div>
+            )}
 
             {/* KPI Cards */}
             <div className="admin-kpi-grid">
@@ -723,6 +879,7 @@ export default function AdminDashboard() {
                                             />
                                         </th>
                                         <th onClick={() => handleSort('farmName')} className="sortable">Farm Name</th>
+                                        <th onClick={() => handleSort('farmerName')} className="sortable">Farmer</th>
                                         <th onClick={() => handleSort('clusterName')} className="sortable">Cluster</th>
                                         <th onClick={() => handleSort('predictedYield')} className="sortable">Predicted Yield</th>
                                         <th onClick={() => handleSort('actualYield')} className="sortable">Actual Yield</th>
@@ -743,6 +900,7 @@ export default function AdminDashboard() {
                                                 />
                                             </td>
                                             <td className="farm-name-cell">{farm.farmName}</td>
+                                            <td>{farm.farmerName}</td>
                                             <td>{farm.clusterName}</td>
                                             <td>{formatKg(farm.predictedYield)}</td>
                                             <td>{formatKg(farm.actualYield)}</td>
@@ -793,6 +951,7 @@ export default function AdminDashboard() {
                                         </span>
                                     </div>
                                     <div className="admin-critical-mobile-meta">
+                                        <span>Farmer: {farm.farmerName}</span>
                                         <span>{farm.clusterName}</span>
                                         <span>Predicted: {formatKg(farm.predictedYield)}</span>
                                         <span>Actual: {formatKg(farm.actualYield)}</span>
@@ -841,6 +1000,14 @@ export default function AdminDashboard() {
                                 <div className="admin-detail-item">
                                     <label>Farm</label>
                                     <span>{selectedCluster.farmName}</span>
+                                </div>
+                                <div className="admin-detail-item">
+                                    <label>Farmer</label>
+                                    <span>{selectedCluster.farmerName}</span>
+                                </div>
+                                <div className="admin-detail-item">
+                                    <label>Farmer Contact</label>
+                                    <span>{selectedCluster.farmerContact}</span>
                                 </div>
                                 <div className="admin-detail-item">
                                     <label>Risk Level</label>

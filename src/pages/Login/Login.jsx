@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { Sprout, Eye, EyeOff, Leaf, Coffee, Flower2, LogIn, KeyRound } from 'lucide-react'
 import LoadingScreen from '../../components/LoadingScreen'
 import ForgotPasswordModal from '../../components/ForgotPasswordModal/ForgotPasswordModal'
-import './Login.css'
 
 export default function Login() {
   const [identifier, setIdentifier] = useState('')
@@ -12,21 +11,11 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoggingIn, setIsLoggingIn] = useState(false)
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
-  const [registerSuccessMessage, setRegisterSuccessMessage] = useState('')
+  const [forgotModalSeed, setForgotModalSeed] = useState(0)
   const { login, error, setError, requestPasswordReset } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-
-  useEffect(() => {
-    const flashMessage = location.state?.registerSuccess
-    if (!flashMessage) return
-
-    setRegisterSuccessMessage(flashMessage)
-    navigate(`${location.pathname}${location.search}${location.hash}`, {
-      replace: true,
-      state: null,
-    })
-  }, [location, navigate])
+  const registerSuccessMessage = location.state?.registerSuccess || ''
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -134,7 +123,10 @@ export default function Login() {
               <button
                 type="button"
                 className="forgot-password-link"
-                onClick={() => setForgotPasswordOpen(true)}
+                onClick={() => {
+                  setForgotModalSeed((prev) => prev + 1)
+                  setForgotPasswordOpen(true)
+                }}
               >
                 <KeyRound size={14} />
                 Forgot Password?
@@ -157,6 +149,7 @@ export default function Login() {
       </div>
 
       <ForgotPasswordModal
+        key={forgotModalSeed}
         isOpen={forgotPasswordOpen}
         onClose={() => setForgotPasswordOpen(false)}
         onSubmit={requestPasswordReset}

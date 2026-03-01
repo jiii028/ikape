@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
@@ -6,6 +6,7 @@ import {
     LayoutDashboard,
     Users,
     TrendingUp,
+    CloudRain,
     LogOut,
     Search,
     Bell,
@@ -19,7 +20,6 @@ import {
     Wheat,
 } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog/ConfirmDialog'
-import './AdminLayout.css'
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 const SIDEBAR_PREF_KEY = 'ikape_admin_sidebar_collapsed'
@@ -29,12 +29,32 @@ const ADMIN_NAV_ITEMS = [
     { path: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { path: '/admin/farmers', icon: Users, label: 'Farmers' },
     { path: '/admin/prediction', icon: TrendingUp, label: 'Prediction' },
+    { path: '/admin/agriclimatic', icon: CloudRain, label: 'AgriClimate' },
 ]
+
+function readNotificationIds(primaryKey, fallbackKey = '') {
+    try {
+        const savedPrimary = localStorage.getItem(primaryKey)
+        const parsedPrimary = savedPrimary ? JSON.parse(savedPrimary) : []
+        if (Array.isArray(parsedPrimary) && parsedPrimary.length > 0) {
+            return parsedPrimary
+        }
+
+        if (!fallbackKey) {
+            return Array.isArray(parsedPrimary) ? parsedPrimary : []
+        }
+
+        const savedFallback = localStorage.getItem(fallbackKey)
+        const parsedFallback = savedFallback ? JSON.parse(savedFallback) : []
+        return Array.isArray(parsedFallback) ? parsedFallback : []
+    } catch {
+        return []
+    }
+}
 
 export default function AdminLayout() {
     const { user, logout } = useAuth()
     const navigate = useNavigate()
-    const location = useLocation()
     const timeoutRef = useRef(null)
     const profileMenuRef = useRef(null)
     const searchContainerRef = useRef(null)
@@ -42,10 +62,19 @@ export default function AdminLayout() {
     const [showProfileMenu, setShowProfileMenu] = useState(false)
     const [showNotifications, setShowNotifications] = useState(false)
     const [showAllNotifications, setShowAllNotifications] = useState(false)
-    const [viewedNotificationIds, setViewedNotificationIds] = useState([])
-    const [clearedNotificationIds, setClearedNotificationIds] = useState([])
-    const [notificationPrefsHydrated, setNotificationPrefsHydrated] = useState(false)
-    const [lastActivity, setLastActivity] = useState(Date.now())
+    const [viewedNotificationIds, setViewedNotificationIds] = useState(() =>
+        readNotificationIds(
+            user?.id ? `${ADMIN_NOTIF_VIEWED_KEY_PREFIX}:${user.id}` : `${ADMIN_NOTIF_VIEWED_KEY_PREFIX}:guest`,
+            user?.id ? `${ADMIN_NOTIF_VIEWED_KEY_PREFIX}:guest` : ''
+        )
+    )
+    const [clearedNotificationIds, setClearedNotificationIds] = useState(() =>
+        readNotificationIds(
+            user?.id ? `${ADMIN_NOTIF_CLEARED_KEY_PREFIX}:${user.id}` : `${ADMIN_NOTIF_CLEARED_KEY_PREFIX}:guest`,
+            user?.id ? `${ADMIN_NOTIF_CLEARED_KEY_PREFIX}:guest` : ''
+        )
+    )
+    const [minutesSinceActivity, setMinutesSinceActivity] = useState(0)
     const [logoutConfirm, setLogoutConfirm] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [isSearchOpen, setIsSearchOpen] = useState(false)
@@ -116,13 +145,6 @@ export default function AdminLayout() {
     }, [])
 
     useEffect(() => {
-        setShowProfileMenu(false)
-        setIsSearchOpen(false)
-        setShowNotifications(false)
-        setShowAllNotifications(false)
-    }, [location.pathname])
-
-    useEffect(() => {
         const fetchSearchEntities = async () => {
             try {
                 const [farmersRes, farmsRes, clustersRes] = await Promise.all([
@@ -157,7 +179,7 @@ export default function AdminLayout() {
     // Session timeout — auto logout after 30 min inactivity
     useEffect(() => {
         const resetTimer = () => {
-            setLastActivity(Date.now())
+            setMinutesSinceActivity(0)
             if (timeoutRef.current) clearTimeout(timeoutRef.current)
             timeoutRef.current = setTimeout(async () => {
                 await logout()
@@ -174,6 +196,13 @@ export default function AdminLayout() {
             if (timeoutRef.current) clearTimeout(timeoutRef.current)
         }
     }, [logout, navigate])
+
+    useEffect(() => {
+        const intervalRef = setInterval(() => {
+            setMinutesSinceActivity((prev) => prev + 1)
+        }, 60 * 1000)
+        return () => clearInterval(intervalRef)
+    }, [])
 
     const handleLogout = async () => {
         await logout()
@@ -289,7 +318,7 @@ export default function AdminLayout() {
             {
                 id: 'session-monitor',
                 title: 'Admin session monitor',
-                detail: `Last activity ${Math.floor((Date.now() - lastActivity) / 60000)} minute(s) ago.`,
+                detail: `Last activity ${minutesSinceActivity} minute(s) ago.`,
             },
             {
                 id: 'search-tip',
@@ -299,7 +328,7 @@ export default function AdminLayout() {
         ]
 
         return items
-    }, [searchEntities, lastActivity])
+    }, [searchEntities, minutesSinceActivity])
 
     const notificationViewedKey = user?.id
         ? `${ADMIN_NOTIF_VIEWED_KEY_PREFIX}:${user.id}`
@@ -307,70 +336,22 @@ export default function AdminLayout() {
     const notificationClearedKey = user?.id
         ? `${ADMIN_NOTIF_CLEARED_KEY_PREFIX}:${user.id}`
         : `${ADMIN_NOTIF_CLEARED_KEY_PREFIX}:guest`
-    const guestNotificationViewedKey = `${ADMIN_NOTIF_VIEWED_KEY_PREFIX}:guest`
-    const guestNotificationClearedKey = `${ADMIN_NOTIF_CLEARED_KEY_PREFIX}:guest`
 
     useEffect(() => {
-        setNotificationPrefsHydrated(false)
-
-        try {
-            const savedViewed = localStorage.getItem(notificationViewedKey)
-            let parsedViewed = savedViewed ? JSON.parse(savedViewed) : []
-            if (user?.id && (!Array.isArray(parsedViewed) || parsedViewed.length === 0)) {
-                const guestViewed = localStorage.getItem(guestNotificationViewedKey)
-                const parsedGuestViewed = guestViewed ? JSON.parse(guestViewed) : []
-                if (Array.isArray(parsedGuestViewed) && parsedGuestViewed.length > 0) {
-                    parsedViewed = parsedGuestViewed
-                }
-            }
-            setViewedNotificationIds(Array.isArray(parsedViewed) ? parsedViewed : [])
-        } catch {
-            setViewedNotificationIds([])
-        }
-
-        try {
-            const savedCleared = localStorage.getItem(notificationClearedKey)
-            let parsedCleared = savedCleared ? JSON.parse(savedCleared) : []
-            if (user?.id && (!Array.isArray(parsedCleared) || parsedCleared.length === 0)) {
-                const guestCleared = localStorage.getItem(guestNotificationClearedKey)
-                const parsedGuestCleared = guestCleared ? JSON.parse(guestCleared) : []
-                if (Array.isArray(parsedGuestCleared) && parsedGuestCleared.length > 0) {
-                    parsedCleared = parsedGuestCleared
-                }
-            }
-            setClearedNotificationIds(Array.isArray(parsedCleared) ? parsedCleared : [])
-        } catch {
-            setClearedNotificationIds([])
-        }
-
-        setNotificationPrefsHydrated(true)
-    }, [
-        guestNotificationClearedKey,
-        guestNotificationViewedKey,
-        notificationClearedKey,
-        notificationViewedKey,
-        user?.id,
-    ])
-
-    useEffect(() => {
-        if (!notificationPrefsHydrated) return
-
         try {
             localStorage.setItem(notificationViewedKey, JSON.stringify(viewedNotificationIds))
         } catch {
             // Ignore storage write errors in restricted browser contexts.
         }
-    }, [notificationPrefsHydrated, notificationViewedKey, viewedNotificationIds])
+    }, [notificationViewedKey, viewedNotificationIds])
 
     useEffect(() => {
-        if (!notificationPrefsHydrated) return
-
         try {
             localStorage.setItem(notificationClearedKey, JSON.stringify(clearedNotificationIds))
         } catch {
             // Ignore storage write errors in restricted browser contexts.
         }
-    }, [clearedNotificationIds, notificationClearedKey, notificationPrefsHydrated])
+    }, [clearedNotificationIds, notificationClearedKey])
 
     const notifications = useMemo(
         () => rawNotifications.filter((item) => !clearedNotificationIds.includes(item.id)),
@@ -378,11 +359,8 @@ export default function AdminLayout() {
     )
 
     const unreadNotificationCount = useMemo(
-        () =>
-            notificationPrefsHydrated
-                ? notifications.filter((item) => !viewedNotificationIds.includes(item.id)).length
-                : 0,
-        [notificationPrefsHydrated, notifications, viewedNotificationIds]
+        () => notifications.filter((item) => !viewedNotificationIds.includes(item.id)).length,
+        [notifications, viewedNotificationIds]
     )
 
     const displayedNotifications = showAllNotifications ? notifications : notifications.slice(0, 3)
@@ -456,7 +434,7 @@ export default function AdminLayout() {
                 <div className="admin-sidebar-footer">
                     <div className="admin-session-info">
                         <Clock size={14} />
-                        <span>Session active - {Math.floor((Date.now() - lastActivity) / 60000)}m</span>
+                        <span>Session active - {minutesSinceActivity}m</span>
                     </div>
                     <button className="admin-logout-btn" onClick={() => setLogoutConfirm(true)}>
                         <LogOut size={20} />

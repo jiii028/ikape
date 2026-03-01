@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, CheckCircle2, KeyRound, Loader2, Mail, Send, X } from 'lucide-react'
-import './ForgotPasswordModal.css'
 
 export default function ForgotPasswordModal({
   isOpen,
@@ -13,24 +12,24 @@ export default function ForgotPasswordModal({
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  useEffect(() => {
-    if (!isOpen) return
+  const resetAndClose = useCallback(() => {
     setEmail(defaultEmail || '')
     setSubmitting(false)
     setError('')
     setSuccess('')
-  }, [isOpen, defaultEmail])
+    onClose()
+  }, [defaultEmail, onClose])
 
   useEffect(() => {
     if (!isOpen) return
 
     const onEscape = (event) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') resetAndClose()
     }
 
     window.addEventListener('keydown', onEscape)
     return () => window.removeEventListener('keydown', onEscape)
-  }, [isOpen, onClose])
+  }, [isOpen, resetAndClose])
 
   if (!isOpen) return null
 
@@ -64,9 +63,9 @@ export default function ForgotPasswordModal({
   }
 
   return (
-    <div className="forgot-password-overlay" onClick={onClose}>
+    <div className="forgot-password-overlay" onClick={resetAndClose}>
       <div className="forgot-password-modal" onClick={(event) => event.stopPropagation()}>
-        <button type="button" className="forgot-password-close" onClick={onClose}>
+        <button type="button" className="forgot-password-close" onClick={resetAndClose}>
           <X size={18} />
         </button>
 

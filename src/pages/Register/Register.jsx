@@ -10,8 +10,6 @@ import {
   Loader2,
   Sprout,
 } from 'lucide-react'
-import '../Login/Login.css'
-import './Register.css'
 
 const REQUIRED_FIELDS = [
   'lastName',

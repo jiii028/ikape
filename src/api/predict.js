@@ -1,5 +1,22 @@
 const ML_API_BASE = (import.meta.env.VITE_ML_API_URL || 'http://localhost:8000').replace(/\/+$/, '')
 
+async function getJson(path) {
+  const response = await fetch(`${ML_API_BASE}${path}`)
+
+  if (!response.ok) {
+    let detail = ''
+    try {
+      const body = await response.json()
+      detail = body?.detail ? `: ${body.detail}` : ''
+    } catch {
+      detail = ''
+    }
+    throw new Error(`Prediction API error (${response.status})${detail}`)
+  }
+
+  return response.json()
+}
+
 async function postJson(path, payload) {
   const response = await fetch(`${ML_API_BASE}${path}`, {
     method: 'POST',
@@ -27,4 +44,8 @@ export async function getPrediction(features) {
 
 export async function getBatchPredictions(samples) {
   return postJson('/predict/batch', { samples })
+}
+
+export async function getModelMetadata() {
+  return getJson('/model/metadata')
 }

@@ -22,7 +22,6 @@ import {
   X,
 } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog/ConfirmDialog'
-import './DashboardLayout.css'
 
 const SIDEBAR_PREF_KEY = 'ikape_farmer_sidebar_collapsed'
 const NOTIFICATION_VIEWED_KEY_PREFIX = 'ikape_farmer_notifications_viewed'
@@ -34,6 +33,26 @@ const FARMER_MAIN_NAV_ITEMS = [
   { path: '/settings', icon: Settings, label: 'Settings' },
 ]
 
+function readNotificationIds(primaryKey, fallbackKey = '') {
+  try {
+    const savedPrimary = localStorage.getItem(primaryKey)
+    const parsedPrimary = savedPrimary ? JSON.parse(savedPrimary) : []
+    if (Array.isArray(parsedPrimary) && parsedPrimary.length > 0) {
+      return parsedPrimary
+    }
+
+    if (!fallbackKey) {
+      return Array.isArray(parsedPrimary) ? parsedPrimary : []
+    }
+
+    const savedFallback = localStorage.getItem(fallbackKey)
+    const parsedFallback = savedFallback ? JSON.parse(savedFallback) : []
+    return Array.isArray(parsedFallback) ? parsedFallback : []
+  } catch {
+    return []
+  }
+}
+
 export default function DashboardLayout() {
   const { user, logout } = useAuth()
   const { farm, clusters } = useFarm()
@@ -44,15 +63,27 @@ export default function DashboardLayout() {
   const searchContainerRef = useRef(null)
   const profileMenuRef = useRef(null)
   const notificationMenuRef = useRef(null)
+  const notificationViewedKey = user?.id
+    ? `${NOTIFICATION_VIEWED_KEY_PREFIX}:${user.id}`
+    : `${NOTIFICATION_VIEWED_KEY_PREFIX}:guest`
+  const notificationClearedKey = user?.id
+    ? `${NOTIFICATION_CLEARED_KEY_PREFIX}:${user.id}`
+    : `${NOTIFICATION_CLEARED_KEY_PREFIX}:guest`
+  const guestNotificationViewedKey = `${NOTIFICATION_VIEWED_KEY_PREFIX}:guest`
+  const guestNotificationClearedKey = `${NOTIFICATION_CLEARED_KEY_PREFIX}:guest`
+
   const [logoutConfirm, setLogoutConfirm] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [showAllNotifications, setShowAllNotifications] = useState(false)
-  const [viewedNotificationIds, setViewedNotificationIds] = useState([])
-  const [clearedNotificationIds, setClearedNotificationIds] = useState([])
-  const [notificationPrefsHydrated, setNotificationPrefsHydrated] = useState(false)
+  const [viewedNotificationIds, setViewedNotificationIds] = useState(() =>
+    readNotificationIds(notificationViewedKey, user?.id ? guestNotificationViewedKey : '')
+  )
+  const [clearedNotificationIds, setClearedNotificationIds] = useState(() =>
+    readNotificationIds(notificationClearedKey, user?.id ? guestNotificationClearedKey : '')
+  )
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_PREF_KEY) === 'true'
@@ -114,12 +145,6 @@ export default function DashboardLayout() {
     return () => document.removeEventListener('mousedown', handleOutsideClick)
   }, [])
 
-  useEffect(() => {
-    setShowProfileMenu(false)
-    setShowNotifications(false)
-    setShowAllNotifications(false)
-  }, [location.pathname])
-
   const rawNotifications = useMemo(() => {
     const items = []
 
@@ -170,80 +195,21 @@ export default function DashboardLayout() {
     return items
   }, [clusters, farm])
 
-  const notificationViewedKey = user?.id
-    ? `${NOTIFICATION_VIEWED_KEY_PREFIX}:${user.id}`
-    : `${NOTIFICATION_VIEWED_KEY_PREFIX}:guest`
-  const notificationClearedKey = user?.id
-    ? `${NOTIFICATION_CLEARED_KEY_PREFIX}:${user.id}`
-    : `${NOTIFICATION_CLEARED_KEY_PREFIX}:guest`
-  const guestNotificationViewedKey = `${NOTIFICATION_VIEWED_KEY_PREFIX}:guest`
-  const guestNotificationClearedKey = `${NOTIFICATION_CLEARED_KEY_PREFIX}:guest`
-
   useEffect(() => {
-    setNotificationPrefsHydrated(false)
-
-    try {
-      const savedViewed = localStorage.getItem(notificationViewedKey)
-      let parsedViewed = savedViewed ? JSON.parse(savedViewed) : []
-
-      if (user?.id && (!Array.isArray(parsedViewed) || parsedViewed.length === 0)) {
-        const guestViewed = localStorage.getItem(guestNotificationViewedKey)
-        const parsedGuestViewed = guestViewed ? JSON.parse(guestViewed) : []
-        if (Array.isArray(parsedGuestViewed) && parsedGuestViewed.length > 0) {
-          parsedViewed = parsedGuestViewed
-        }
-      }
-
-      setViewedNotificationIds(Array.isArray(parsedViewed) ? parsedViewed : [])
-    } catch {
-      setViewedNotificationIds([])
-    }
-
-    try {
-      const savedCleared = localStorage.getItem(notificationClearedKey)
-      let parsedCleared = savedCleared ? JSON.parse(savedCleared) : []
-
-      if (user?.id && (!Array.isArray(parsedCleared) || parsedCleared.length === 0)) {
-        const guestCleared = localStorage.getItem(guestNotificationClearedKey)
-        const parsedGuestCleared = guestCleared ? JSON.parse(guestCleared) : []
-        if (Array.isArray(parsedGuestCleared) && parsedGuestCleared.length > 0) {
-          parsedCleared = parsedGuestCleared
-        }
-      }
-
-      setClearedNotificationIds(Array.isArray(parsedCleared) ? parsedCleared : [])
-    } catch {
-      setClearedNotificationIds([])
-    }
-
-    setNotificationPrefsHydrated(true)
-  }, [
-    guestNotificationClearedKey,
-    guestNotificationViewedKey,
-    notificationClearedKey,
-    notificationViewedKey,
-    user?.id,
-  ])
-
-  useEffect(() => {
-    if (!notificationPrefsHydrated) return
-
     try {
       localStorage.setItem(notificationViewedKey, JSON.stringify(viewedNotificationIds))
     } catch {
       // Ignore storage write errors in restricted browser contexts.
     }
-  }, [notificationPrefsHydrated, notificationViewedKey, viewedNotificationIds])
+  }, [notificationViewedKey, viewedNotificationIds])
 
   useEffect(() => {
-    if (!notificationPrefsHydrated) return
-
     try {
       localStorage.setItem(notificationClearedKey, JSON.stringify(clearedNotificationIds))
     } catch {
       // Ignore storage write errors in restricted browser contexts.
     }
-  }, [clearedNotificationIds, notificationClearedKey, notificationPrefsHydrated])
+  }, [clearedNotificationIds, notificationClearedKey])
 
   const notifications = useMemo(
     () => rawNotifications.filter((item) => !clearedNotificationIds.includes(item.id)),
@@ -251,11 +217,8 @@ export default function DashboardLayout() {
   )
 
   const unreadNotificationCount = useMemo(
-    () =>
-      notificationPrefsHydrated
-        ? notifications.filter((item) => !viewedNotificationIds.includes(item.id)).length
-        : 0,
-    [notificationPrefsHydrated, notifications, viewedNotificationIds]
+    () => notifications.filter((item) => !viewedNotificationIds.includes(item.id)).length,
+    [notifications, viewedNotificationIds]
   )
 
   const displayedNotifications = showAllNotifications ? notifications : notifications.slice(0, 3)

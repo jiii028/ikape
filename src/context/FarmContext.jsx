@@ -284,39 +284,26 @@ export function FarmProvider({ children }) {
       }
 
       if (Object.keys(dbStageData).length > 0) {
-        const { data: existingRows, error: lookupError } = await supabase
+        const { error: insertStageError } = await supabase
           .from('cluster_stage_data')
-          .select('id')
-          .eq('cluster_id', clusterId)
-          .order('updated_at', { ascending: false })
-          .limit(1)
+          .insert({
+            cluster_id: clusterId,
+            ...dbStageData,
+          })
 
-        if (lookupError) {
-          console.error('Error looking up cluster_stage_data row:', lookupError.message)
-          return { success: false, error: normalizeDbError(lookupError, 'Unable to save cluster stage data.') }
-        }
+        if (insertStageError) {
+          // Backward compatibility for schemas that enforce one row per cluster.
+          if (insertStageError.code === '23505') {
+            const { error: fallbackUpdateError } = await supabase
+              .from('cluster_stage_data')
+              .update(dbStageData)
+              .eq('cluster_id', clusterId)
 
-        const existingRowId = existingRows?.[0]?.id
-
-        if (existingRowId) {
-          const { error: updateStageError } = await supabase
-            .from('cluster_stage_data')
-            .update(dbStageData)
-            .eq('id', existingRowId)
-
-          if (updateStageError) {
-            console.error('Error updating cluster_stage_data:', updateStageError.message)
-            return { success: false, error: normalizeDbError(updateStageError, 'Unable to update cluster stage data.') }
-          }
-        } else {
-          const { error: insertStageError } = await supabase
-            .from('cluster_stage_data')
-            .insert({
-              cluster_id: clusterId,
-              ...dbStageData,
-            })
-
-          if (insertStageError) {
+            if (fallbackUpdateError) {
+              console.error('Error updating cluster_stage_data fallback:', fallbackUpdateError.message)
+              return { success: false, error: normalizeDbError(fallbackUpdateError, 'Unable to save cluster stage data.') }
+            }
+          } else {
             console.error('Error inserting cluster_stage_data:', insertStageError.message)
             return { success: false, error: normalizeDbError(insertStageError, 'Unable to create cluster stage data.') }
           }
@@ -324,50 +311,18 @@ export function FarmProvider({ children }) {
       }
     }
 
-    const harvestPayload = mapHarvestRecordFromStageData(stageDataForUpsert || mergedStageData || updates.stageData || {})
+    const harvestPayload = mapHarvestRecordFromStageData(updates.stageData || {})
     if (harvestPayload) {
-      let harvestLookup = supabase
+      const { error: insertHarvestError } = await supabase
         .from('harvest_records')
-        .select('id')
-        .eq('cluster_id', clusterId)
+        .insert({
+          cluster_id: clusterId,
+          ...harvestPayload,
+        })
 
-      if (harvestPayload.season) {
-        harvestLookup = harvestLookup.eq('season', harvestPayload.season)
-      }
-
-      const { data: existingHarvestRows, error: harvestLookupError } = await harvestLookup
-        .order('recorded_at', { ascending: false })
-        .limit(1)
-
-      if (harvestLookupError) {
-        console.error('Error looking up harvest_records row:', harvestLookupError.message)
-        return { success: false, error: normalizeDbError(harvestLookupError, 'Unable to save harvest record.') }
-      }
-
-      const existingHarvestId = existingHarvestRows?.[0]?.id
-
-      if (existingHarvestId) {
-        const { error: updateHarvestError } = await supabase
-          .from('harvest_records')
-          .update(harvestPayload)
-          .eq('id', existingHarvestId)
-
-        if (updateHarvestError) {
-          console.error('Error updating harvest_records:', updateHarvestError.message)
-          return { success: false, error: normalizeDbError(updateHarvestError, 'Unable to update harvest record.') }
-        }
-      } else {
-        const { error: insertHarvestError } = await supabase
-          .from('harvest_records')
-          .insert({
-            cluster_id: clusterId,
-            ...harvestPayload,
-          })
-
-        if (insertHarvestError) {
-          console.error('Error inserting harvest_records:', insertHarvestError.message)
-          return { success: false, error: normalizeDbError(insertHarvestError, 'Unable to create harvest record.') }
-        }
+      if (insertHarvestError) {
+        console.error('Error inserting harvest_records:', insertHarvestError.message)
+        return { success: false, error: normalizeDbError(insertHarvestError, 'Unable to create harvest record.') }
       }
     }
 
@@ -555,6 +510,7 @@ function mapClusterFromDb(row, stageDataOverride = null) {
 
   return {
     id: row.id,
+    farmId: row.farm_id,
     clusterName: row.cluster_name,
     areaSize: row.area_size_sqm ?? row.area_size ?? '',
     plantCount: row.plant_count,
@@ -570,7 +526,10 @@ function getStageDataFromNestedRow(row) {
   const nested = row?.cluster_stage_data
   if (!nested) return null
   if (Array.isArray(nested)) {
-    return nested[0] ? mapStageDataFromDb(nested[0]) : null
+    if (!nested.length) return null
+    const latest = [...nested]
+      .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))[0]
+    return latest ? mapStageDataFromDb(latest) : null
   }
   if (typeof nested === 'object') {
     return mapStageDataFromDb(nested)
@@ -596,6 +555,9 @@ function mapStageDataFromDb(row) {
     monthlyTemperature: row.avg_temp_c ?? row.monthly_temperature ?? '',
     rainfall: row.avg_rainfall_mm ?? row.rainfall ?? '',
     humidity: row.avg_humidity_pct ?? row.humidity ?? '',
+    floodRiskLevel: row.flood_risk_level || '',
+    floodEventsCount: row.flood_events_count ?? '',
+    floodLastEventDate: row.flood_last_event_date || '',
     soilPh: row.soil_ph ?? '',
     lastHarvestedDate: row.actual_harvest_date || row.last_harvested_date || '',
     previousYield: row.pre_yield_kg ?? row.previous_yield ?? '',
@@ -623,7 +585,17 @@ function mapStageDataFromDb(row) {
     postGradeCommercial: row.post_grade_commercial ?? '',
     defectCount: row.defect_count ?? '',
     beanMoisture: row.bean_moisture ?? '',
+    beanSizeMm: row.bean_size_mm ?? '',
     beanScreenSize: row.bean_screen_size || '',
+    defectBlackPct: row.defect_black_pct ?? '',
+    defectMoldInfestedPct: row.defect_mold_infested_pct ?? '',
+    defectImmaturePct: row.defect_immature_pct ?? '',
+    defectBrokenPct: row.defect_broken_pct ?? '',
+    defectDriedCherriesPct: row.defect_dried_cherries_pct ?? '',
+    defectForeignMatterPct: row.defect_foreign_matter_pct ?? '',
+    pnsTotalDefectsPct: row.pns_total_defects_pct ?? '',
+    pnsQualityClass: row.pns_quality_class || '',
+    pnsComplianceStatus: row.pns_compliance_status || '',
   }
 }
 
@@ -647,6 +619,9 @@ function mapStageDataToDb(sd = {}) {
   if (has('monthlyTemperature')) mapped.avg_temp_c = num(sd.monthlyTemperature)
   if (has('rainfall')) mapped.avg_rainfall_mm = num(sd.rainfall)
   if (has('humidity')) mapped.avg_humidity_pct = num(sd.humidity)
+  if (has('floodRiskLevel')) mapped.flood_risk_level = (str(sd.floodRiskLevel) || '').toLowerCase().replace(/[_\s]+/g, '-') || null
+  if (has('floodEventsCount')) mapped.flood_events_count = int(sd.floodEventsCount)
+  if (has('floodLastEventDate')) mapped.flood_last_event_date = dt(sd.floodLastEventDate)
   if (has('estimatedFloweringDate')) mapped.estimated_flowering_date = dt(sd.estimatedFloweringDate)
   if (has('actualFloweringDate')) mapped.actual_flowering_date = dt(sd.actualFloweringDate)
   if (has('estimatedHarvestDate')) mapped.estimated_harvest_date = dt(sd.estimatedHarvestDate)
@@ -659,7 +634,17 @@ function mapStageDataToDb(sd = {}) {
   if (has('preGradeCommercial')) mapped.pre_grade_commercial = num(sd.preGradeCommercial)
   if (has('defectCount')) mapped.defect_count = int(sd.defectCount)
   if (has('beanMoisture')) mapped.bean_moisture = num(sd.beanMoisture)
+  if (has('beanSizeMm')) mapped.bean_size_mm = num(sd.beanSizeMm)
   if (has('beanScreenSize')) mapped.bean_screen_size = str(sd.beanScreenSize)
+  if (has('defectBlackPct')) mapped.defect_black_pct = num(sd.defectBlackPct)
+  if (has('defectMoldInfestedPct')) mapped.defect_mold_infested_pct = num(sd.defectMoldInfestedPct)
+  if (has('defectImmaturePct')) mapped.defect_immature_pct = num(sd.defectImmaturePct)
+  if (has('defectBrokenPct')) mapped.defect_broken_pct = num(sd.defectBrokenPct)
+  if (has('defectDriedCherriesPct')) mapped.defect_dried_cherries_pct = num(sd.defectDriedCherriesPct)
+  if (has('defectForeignMatterPct')) mapped.defect_foreign_matter_pct = num(sd.defectForeignMatterPct)
+  if (has('pnsTotalDefectsPct')) mapped.pns_total_defects_pct = num(sd.pnsTotalDefectsPct)
+  if (has('pnsQualityClass')) mapped.pns_quality_class = str(sd.pnsQualityClass)
+  if (has('pnsComplianceStatus')) mapped.pns_compliance_status = str(sd.pnsComplianceStatus)
 
   // Harvest date fields map to actual_harvest_date.
   if (has('lastHarvestedDate')) mapped.actual_harvest_date = dt(sd.lastHarvestedDate)

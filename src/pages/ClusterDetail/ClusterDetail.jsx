@@ -4,7 +4,7 @@ import { ArrowLeft, Save, ChevronDown } from 'lucide-react'
 import { useFarm } from '../../context/FarmContext'
 import { supabase } from '../../lib/supabase'
 import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
-import './ClusterDetail.css'
+import { evaluatePnsCompliance } from '../../lib/pnsCoffeeStandard'
 
 const STAGE_OPTIONS = [
   { value: 'seed-sapling', label: 'Sapling' },
@@ -28,6 +28,13 @@ const PESTICIDE_FREQ_OPTIONS = [
   { value: 'Rarely', label: 'Rarely — Once every few years' },
   { value: 'Never', label: 'Never' },
 ]
+const FLOOD_RISK_OPTIONS = [
+  { value: 'none', label: 'None' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'severe', label: 'Severe' },
+]
 const SHADE_TREE_OPTIONS = ['Yes', 'No']
 const AGRICLIMATIC_FIELD_NAMES = ['monthlyTemperature', 'rainfall', 'humidity', 'soilPh']
 const PRUNING_FUTURE_DATE_ERROR = 'Last Pruned Date cannot be set to a future date.'
@@ -46,6 +53,14 @@ const PERCENTAGE_TRIPLETS = [
     label: 'Post-Harvest Grade Breakdown',
   },
 ]
+const PNS_DEFECT_FIELDS = [
+  'defectBlackPct',
+  'defectMoldInfestedPct',
+  'defectImmaturePct',
+  'defectBrokenPct',
+  'defectDriedCherriesPct',
+  'defectForeignMatterPct',
+]
 
 const SECTION_FIELDS = {
   overview: [
@@ -57,6 +72,9 @@ const SECTION_FIELDS = {
     { name: 'rainfall', label: 'Average Monthly Rainfall (mm)', type: 'number' },
     { name: 'humidity', label: 'Average Monthly Humidity (%)', type: 'number' },
     { name: 'soilPh', label: 'Soil pH (0–14)', type: 'number', step: '0.1', min: '0', max: '14' },
+    { name: 'floodRiskLevel', label: 'Flood Risk Level', type: 'select-labeled', options: FLOOD_RISK_OPTIONS },
+    { name: 'floodEventsCount', label: 'Flood Events (Current Season)', type: 'number', min: '0', step: '1' },
+    { name: 'floodLastEventDate', label: 'Last Flood Event Date', type: 'date' },
     { name: 'estimatedFloweringDate', label: 'Estimated Flowering Date', type: 'date' },
     { name: 'actualFloweringDate', label: 'Actual Flowering Date', type: 'date' },
   ],
@@ -82,7 +100,14 @@ const SECTION_FIELDS = {
     { name: 'postGradePremium', label: 'Post-Harvest: Premium (%)', type: 'number' },
     { name: 'postGradeCommercial', label: 'Post-Harvest: Commercial (%)', type: 'number' },
     { name: 'defectCount', label: 'Post-Harvest: Defect Count', type: 'number' },
-    { name: 'beanMoisture', label: 'Post-Harvest: Bean Moisture Content (%)', type: 'number' },
+    { name: 'beanMoisture', label: 'Post-Harvest: Bean Moisture Content (%)', type: 'number', min: '0', max: '100' },
+    { name: 'beanSizeMm', label: 'Post-Harvest: Bean Size (mm)', type: 'number', step: '0.1', min: '0' },
+    { name: 'defectBlackPct', label: 'PNS Defect: Black Bean (%)', type: 'number', step: '0.1', min: '0', max: '100' },
+    { name: 'defectMoldInfestedPct', label: 'PNS Defect: Moldy/Infested Bean (%)', type: 'number', step: '0.1', min: '0', max: '100' },
+    { name: 'defectImmaturePct', label: 'PNS Defect: Immature Bean (%)', type: 'number', step: '0.1', min: '0', max: '100' },
+    { name: 'defectBrokenPct', label: 'PNS Defect: Broken Bean (%)', type: 'number', step: '0.1', min: '0', max: '100' },
+    { name: 'defectDriedCherriesPct', label: 'PNS Defect: Dried Cherries (%)', type: 'number', step: '0.1', min: '0', max: '100' },
+    { name: 'defectForeignMatterPct', label: 'PNS Defect: Foreign Matter (%)', type: 'number', step: '0.1', min: '0', max: '100' },
     { name: 'beanScreenSize', label: 'Post-Harvest: Bean Screen Size', type: 'text' },
   ],
   pruning: [
@@ -137,7 +162,22 @@ const HARVEST_FIELD_GROUPS = [
     id: 'post',
     title: 'Post-Harvest Quality',
     subtitle: 'Capture current output and bean quality checks.',
-    fieldNames: ['postCurrentYield', 'postGradeFine', 'postGradePremium', 'postGradeCommercial', 'defectCount', 'beanMoisture', 'beanScreenSize'],
+    fieldNames: [
+      'postCurrentYield',
+      'postGradeFine',
+      'postGradePremium',
+      'postGradeCommercial',
+      'defectCount',
+      'beanMoisture',
+      'beanSizeMm',
+      'defectBlackPct',
+      'defectMoldInfestedPct',
+      'defectImmaturePct',
+      'defectBrokenPct',
+      'defectDriedCherriesPct',
+      'defectForeignMatterPct',
+      'beanScreenSize',
+    ],
   },
 ]
 
@@ -146,6 +186,17 @@ function formatDateLocal(date) {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+function getPlantAgeYears(dateValue) {
+  if (!dateValue) return ''
+  const plantedDate = new Date(dateValue)
+  if (Number.isNaN(plantedDate.getTime())) return ''
+  const now = new Date()
+  const diffMs = now.getTime() - plantedDate.getTime()
+  if (diffMs <= 0) return '0.00'
+  const years = diffMs / (1000 * 60 * 60 * 24 * 365.2425)
+  return years.toFixed(2)
 }
 
 function parsePercent(value) {
@@ -213,6 +264,32 @@ function getPercentageValidationError(formValues) {
   return ''
 }
 
+function getPnsInputValidationError(formValues) {
+  const moisture = parsePercent(formValues.beanMoisture)
+  if (moisture !== null && (moisture < 0 || moisture > 100)) {
+    return 'Bean moisture must be between 0 and 100.'
+  }
+
+  const beanSize = parsePercent(formValues.beanSizeMm)
+  if (beanSize !== null && beanSize < 0) {
+    return 'Bean size must be a non-negative value in millimeters.'
+  }
+
+  const floodEvents = parsePercent(formValues.floodEventsCount)
+  if (floodEvents !== null && floodEvents < 0) {
+    return 'Flood events count must be zero or greater.'
+  }
+
+  for (const key of PNS_DEFECT_FIELDS) {
+    const value = parsePercent(formValues[key])
+    if (value !== null && (value < 0 || value > 100)) {
+      return 'Each PNS defect percentage must be between 0 and 100.'
+    }
+  }
+
+  return ''
+}
+
 export default function ClusterDetail() {
   const { clusterId, section = 'overview' } = useParams()
   const navigate = useNavigate()
@@ -239,6 +316,10 @@ export default function ClusterDetail() {
   const isPruningLocked = isPruningSection && cluster?.plantStage === 'seed-sapling'
   const isSectionLocked = isHarvestLocked || isPruningLocked
   const todayDate = useMemo(() => formatDateLocal(new Date()), [])
+  const plantAgeYears = useMemo(
+    () => getPlantAgeYears(form.datePlanted || cluster?.stageData?.datePlanted),
+    [cluster?.stageData?.datePlanted, form.datePlanted]
+  )
 
   const fields = useMemo(() => {
     const baseFields = SECTION_FIELDS[section] || []
@@ -288,6 +369,14 @@ export default function ClusterDetail() {
     }
   }, [form])
   const isOverviewSection = section === 'overview'
+  const pnsSummary = useMemo(
+    () =>
+      evaluatePnsCompliance({
+        ...form,
+        variety: form.variety || cluster?.stageData?.variety || cluster?.variety || '',
+      }),
+    [cluster?.stageData?.variety, cluster?.variety, form]
+  )
 
   useEffect(() => {
     if (!isOverviewSection) return
@@ -408,6 +497,10 @@ export default function ClusterDetail() {
       setFormError(PRUNING_FUTURE_DATE_ERROR)
       return
     }
+    if (name === 'floodLastEventDate' && value && value > todayDate) {
+      setFormError('Last Flood Event Date cannot be set to a future date.')
+      return
+    }
     if (isFertilizeSection && name === 'soilPh') return
     if (isOverviewSection && AGRICLIMATIC_FIELD_NAMES.includes(e.target.name)) return
     setIsDirty(true)
@@ -444,7 +537,6 @@ export default function ClusterDetail() {
       ...(resolvedVariety
         ? {
             stageData: {
-              ...(cluster.stageData || {}),
               variety: resolvedVariety,
             },
           }
@@ -456,7 +548,6 @@ export default function ClusterDetail() {
       const now = new Date()
       const estimate = new Date(now.getFullYear(), now.getMonth() + 11, now.getDate())
       updates.stageData = {
-        ...(cluster.stageData || {}),
         ...(resolvedVariety ? { variety: resolvedVariety } : {}),
         estimatedHarvestDate: formatDateLocal(estimate),
       }
@@ -475,9 +566,18 @@ export default function ClusterDetail() {
       setFormError(PRUNING_FUTURE_DATE_ERROR)
       return
     }
+    if (form.floodLastEventDate && form.floodLastEventDate > todayDate) {
+      setFormError('Last Flood Event Date cannot be set to a future date.')
+      return
+    }
     const percentageError = getPercentageValidationError(form)
     if (percentageError) {
       setFormError(percentageError)
+      return
+    }
+    const pnsInputError = getPnsInputValidationError(form)
+    if (pnsInputError) {
+      setFormError(pnsInputError)
       return
     }
     setShowSaveConfirm(true)
@@ -489,18 +589,34 @@ export default function ClusterDetail() {
       setFormError(PRUNING_FUTURE_DATE_ERROR)
       return
     }
+    if (form.floodLastEventDate && form.floodLastEventDate > todayDate) {
+      setFormError('Last Flood Event Date cannot be set to a future date.')
+      return
+    }
     const percentageError = getPercentageValidationError(form)
     if (percentageError) {
       setFormError(percentageError)
       return
     }
+    const pnsInputError = getPnsInputValidationError(form)
+    if (pnsInputError) {
+      setFormError(pnsInputError)
+      return
+    }
     setSaving(true)
     try {
-      const { numberOfPlants, ...stageDataPayload } = form
+      const { numberOfPlants: _numberOfPlants, ...stageDataPayload } = form
+      const evaluatedPns = evaluatePnsCompliance({
+        ...stageDataPayload,
+        variety: stageDataPayload.variety || cluster?.stageData?.variety || cluster?.variety || '',
+      })
       const result = await updateCluster(cluster.id, {
         stageData: {
-          ...(cluster.stageData || {}),
           ...stageDataPayload,
+          pnsTotalDefectsPct: evaluatedPns.totalDefectsPct,
+          pnsQualityClass: evaluatedPns.qualityClass,
+          pnsComplianceStatus: evaluatedPns.complianceStatus,
+          beanScreenSize: evaluatedPns.beanSizeClass || stageDataPayload.beanScreenSize || '',
         },
       })
       if (!result?.success) {
@@ -574,6 +690,9 @@ export default function ClusterDetail() {
         <div className="cd-title">
           <h1>{cluster.clusterName}</h1>
           <p>Area: {cluster.areaSize} sqm | Plants: {cluster.plantCount}</p>
+          <p className="cd-meta-line">
+            Farm ID: {cluster.farmId || 'N/A'} | Cluster ID: {cluster.id}
+          </p>
         </div>
         <div className="cd-stage">
           <label>Plant Stage</label>
@@ -606,6 +725,19 @@ export default function ClusterDetail() {
         {!isSectionLocked && (
           <form className="cd-form" onSubmit={handleSave}>
             {formError && <div className="cd-form-error">{formError}</div>}
+            {isOverviewSection && (
+              <div className="cd-overview-meta">
+                <span>Computed Plant Age: {plantAgeYears || 'N/A'} year(s)</span>
+              </div>
+            )}
+            {isHarvestSection && (
+              <div className={`cd-form-error ${pnsSummary.complianceStatus === 'Compliant' ? 'cd-form-note' : ''}`}>
+                PNS/BAFS 01:2025 status: {pnsSummary.complianceStatus}
+                {' '}| Class: {pnsSummary.qualityClass}
+                {' '}| Total Defects: {pnsSummary.totalDefectsPct.toFixed(2)}%
+                {pnsSummary.beanSizeClass ? ` | Bean Size: ${pnsSummary.beanSizeClass}` : ''}
+              </div>
+            )}
             {isHarvestSection ? (
               <>
                 <div className="harvest-form-toolbar">

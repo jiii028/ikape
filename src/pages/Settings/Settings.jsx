@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { User, Mail, Phone, MapPin, Save, LogOut, Calendar, KeyRound } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
 import ForgotPasswordModal from '../../components/ForgotPasswordModal/ForgotPasswordModal'
-import './Settings.css'
+import SystemFlowGuide from '../../components/SystemFlowGuide/SystemFlowGuide'
 
 export default function Settings() {
   const { user, logout, updateProfile, requestPasswordReset } = useAuth()
@@ -213,6 +213,8 @@ export default function Settings() {
           </div>
         </div>
       </div>
+
+      <SystemFlowGuide mode="monitoring" />
 
       <ConfirmDialog
         isOpen={saveConfirm}

@@ -1,27 +1,36 @@
--- Keep cluster_stage_data.number_of_plants always synced from clusters.plant_count
--- Run this in Supabase SQL Editor
+-- Keep cluster_stage_data.number_of_plants synced from clusters.plant_count
+-- Compatible with append-only stage history (no ON CONFLICT dependency).
+-- Run this in Supabase SQL Editor.
 
--- 1) Backfill: ensure every cluster has a stage-data row and overwrite number_of_plants from plant_count
-INSERT INTO public.cluster_stage_data (cluster_id, number_of_plants)
-SELECT c.id, c.plant_count
+BEGIN;
+
+-- 1) Backfill only missing clusters (do not overwrite existing history).
+INSERT INTO public.cluster_stage_data (cluster_id, number_of_plants, season)
+SELECT
+  c.id,
+  c.plant_count,
+  concat('Season ', extract(year from now())::int)
 FROM public.clusters c
-ON CONFLICT (cluster_id)
-DO UPDATE SET
-  number_of_plants = EXCLUDED.number_of_plants,
-  updated_at = now();
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM public.cluster_stage_data csd
+  WHERE csd.cluster_id = c.id
+);
 
--- 2) Trigger function: whenever clusters.plant_count changes, mirror it to cluster_stage_data.number_of_plants
+-- 2) Trigger: append a new stage snapshot whenever clusters.plant_count changes.
 CREATE OR REPLACE FUNCTION public.sync_number_of_plants_from_clusters()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  INSERT INTO public.cluster_stage_data (cluster_id, number_of_plants)
-  VALUES (NEW.id, NEW.plant_count)
-  ON CONFLICT (cluster_id)
-  DO UPDATE SET
-    number_of_plants = EXCLUDED.number_of_plants,
-    updated_at = now();
+  IF TG_OP = 'INSERT' OR NEW.plant_count IS DISTINCT FROM OLD.plant_count THEN
+    INSERT INTO public.cluster_stage_data (cluster_id, number_of_plants, season)
+    VALUES (
+      NEW.id,
+      NEW.plant_count,
+      concat('Season ', extract(year from now())::int)
+    );
+  END IF;
 
   RETURN NEW;
 END;
@@ -35,7 +44,7 @@ ON public.clusters
 FOR EACH ROW
 EXECUTE FUNCTION public.sync_number_of_plants_from_clusters();
 
--- 3) Trigger function: overwrite direct edits to cluster_stage_data.number_of_plants with clusters.plant_count
+-- 3) Trigger: enforce source-of-truth from clusters on direct stage_data edits.
 CREATE OR REPLACE FUNCTION public.enforce_number_of_plants_from_clusters()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -64,8 +73,4 @@ ON public.cluster_stage_data
 FOR EACH ROW
 EXECUTE FUNCTION public.enforce_number_of_plants_from_clusters();
 
--- Optional verification query
--- SELECT c.id, c.plant_count, csd.number_of_plants
--- FROM public.clusters c
--- LEFT JOIN public.cluster_stage_data csd ON csd.cluster_id = c.id
--- ORDER BY c.created_at DESC;
+COMMIT;

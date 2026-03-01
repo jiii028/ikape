@@ -1,5 +1,4 @@
 import { Sprout, Cloud, Coffee, Leaf } from 'lucide-react'
-import './LoadingScreen.css'
 
 export default function LoadingScreen({ message = 'Preparing your dashboard...' }) {
     return (

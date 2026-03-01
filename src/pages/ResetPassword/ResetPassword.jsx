@@ -13,8 +13,6 @@ import {
   Sprout,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import '../Login/Login.css'
-import './ResetPassword.css'
 
 export default function ResetPassword() {
   const navigate = useNavigate()

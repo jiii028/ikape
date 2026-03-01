@@ -15,7 +15,6 @@ import {
     AlertTriangle,
 } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
-import './RegisteredFarmers.css'
 
 const PAGE_SIZE = 10
 const REGISTERED_FARMERS_CACHE_KEY = 'admin_farmers:list'

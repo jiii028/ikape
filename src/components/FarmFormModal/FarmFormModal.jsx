@@ -1,32 +1,37 @@
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { useFarm } from '../../context/FarmContext'
 import { X } from 'lucide-react'
 import ConfirmDialog from '../ConfirmDialog/ConfirmDialog'
-import './FarmFormModal.css'
+
+const EMPTY_FARM_FORM = {
+  farmName: '',
+  farmArea: '',
+  elevation: '',
+  plantVariety: '',
+  overallTreeCount: '',
+}
+
+function farmComparableFields(obj) {
+  return {
+    farmName: obj.farmName,
+    farmArea: obj.farmArea,
+    elevation: obj.elevation,
+    plantVariety: obj.plantVariety,
+    overallTreeCount: obj.overallTreeCount,
+  }
+}
 
 export default function FarmFormModal({ onClose, editData }) {
   const { setFarmInfo } = useFarm()
-  const [form, setForm] = useState(
-    editData || {
-      farmName: '',
-      farmArea: '',
-      elevation: '',
-      plantVariety: '',
-      overallTreeCount: '',
-    }
-  )
-  const [isDirty, setIsDirty] = useState(false)
+  const initialForm = useMemo(() => editData || EMPTY_FARM_FORM, [editData])
+  const [form, setForm] = useState(initialForm)
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
   const [formError, setFormError] = useState('')
 
-  useEffect(() => {
-    const initialData = editData || { farmName: '', farmArea: '', elevation: '', plantVariety: '', overallTreeCount: '' }
-    // Compare only the fields we care about (ignore id)
-    const compare = (obj) => ({ farmName: obj.farmName, farmArea: obj.farmArea, elevation: obj.elevation, plantVariety: obj.plantVariety, overallTreeCount: obj.overallTreeCount })
-    const hasChanges = JSON.stringify(compare(form)) !== JSON.stringify(compare(initialData))
-    setIsDirty(hasChanges)
-  }, [form, editData])
+  const isDirty = useMemo(() => {
+    return JSON.stringify(farmComparableFields(form)) !== JSON.stringify(farmComparableFields(initialForm))
+  }, [form, initialForm])
 
   const handleChange = (e) => {
     if (formError) setFormError('')

@@ -22,7 +22,6 @@ import {
 import ClusterFormModal from '../../components/ClusterFormModal/ClusterFormModal'
 import FarmFormModal from '../../components/FarmFormModal/FarmFormModal'
 import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
-import './Dashboard.css'
 
 const STAGE_CONFIG = {
   'seed-sapling': { label: 'Sapling', icon: Sprout, color: '#86efac', bg: '#f0fdf4' },

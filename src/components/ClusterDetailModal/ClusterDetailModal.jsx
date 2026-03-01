@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { useFarm } from '../../context/FarmContext'
 import { X, Save } from 'lucide-react'
 import ConfirmDialog from '../ConfirmDialog/ConfirmDialog'
-import '../FarmFormModal/FarmFormModal.css'
 
 const PRUNING_FUTURE_DATE_ERROR = 'Last Pruned Date cannot be set to a future date.'
 
@@ -126,29 +125,18 @@ export default function ClusterDetailModal({ cluster, onClose }) {
   const { updateCluster } = useFarm()
   const fields = STAGE_FIELDS[cluster.plantStage] || STAGE_FIELDS['seed-sapling']
   const todayDate = getTodayDateValue()
-  const [form, setForm] = useState(() => {
+  const initialForm = useMemo(() => {
     const initial = {}
     fields.forEach((f) => {
       initial[f.name] = cluster.stageData?.[f.name] || ''
     })
     return initial
-  })
-  const [initialForm, setInitialForm] = useState(() => {
-    const initial = {}
-    fields.forEach((f) => {
-      initial[f.name] = cluster.stageData?.[f.name] || ''
-    })
-    return initial
-  })
-  const [isDirty, setIsDirty] = useState(false)
+  }, [cluster.stageData, fields])
+  const [form, setForm] = useState(initialForm)
   const [formError, setFormError] = useState('')
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
-
-  useEffect(() => {
-    const hasChanges = JSON.stringify(form) !== JSON.stringify(initialForm)
-    setIsDirty(hasChanges)
-  }, [form, initialForm])
+  const isDirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(initialForm), [form, initialForm])
 
   const handleChange = (e) => {
     const { name, value } = e.target

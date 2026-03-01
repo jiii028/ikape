@@ -1,30 +1,24 @@
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { useFarm } from '../../context/FarmContext'
 import { X } from 'lucide-react'
 import ConfirmDialog from '../ConfirmDialog/ConfirmDialog'
-import '../FarmFormModal/FarmFormModal.css'
+
+const DEFAULT_CLUSTER_FORM = {
+  clusterName: '',
+  areaSize: '',
+  plantCount: '',
+  plantStage: 'seed-sapling',
+}
 
 export default function ClusterFormModal({ onClose, editData }) {
   const { farm, clusters, addCluster, updateCluster } = useFarm()
-  const [form, setForm] = useState(
-    editData || {
-      clusterName: '',
-      areaSize: '',
-      plantCount: '',
-      plantStage: 'seed-sapling',
-    }
-  )
-  const [isDirty, setIsDirty] = useState(false)
+  const initialForm = useMemo(() => editData || DEFAULT_CLUSTER_FORM, [editData])
+  const [form, setForm] = useState(initialForm)
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
   const [formError, setFormError] = useState('')
 
-  useEffect(() => {
-    // Track if form has been modified
-    const initialData = editData || { clusterName: '', areaSize: '', plantCount: '', plantStage: 'seed-sapling' }
-    const hasChanges = JSON.stringify(form) !== JSON.stringify(initialData)
-    setIsDirty(hasChanges)
-  }, [form, editData])
+  const isDirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(initialForm), [form, initialForm])
 
   const handleChange = (e) => {
     setFormError('')

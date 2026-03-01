@@ -26,7 +26,6 @@ import {
   Pie,
   Cell,
 } from 'recharts'
-import './HarvestRecords.css'
 
 const GRADE_COLORS = ['#2d5a2d', '#7bc67b', '#fbbf24']
 

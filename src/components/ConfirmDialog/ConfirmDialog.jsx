@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { X, AlertTriangle, Save, LogOut } from 'lucide-react'
-import './ConfirmDialog.css'
 
 export default function ConfirmDialog({ 
   isOpen, 
