@@ -247,6 +247,200 @@
   color: var(--text-light);
 }
 
+/* Plant Stage Navigator Styles */
+.plant-stage-card {
+  background: linear-gradient(135deg, #f6faf6 0%, #ffffff 100%);
+  border: 1px solid #e0ebe0;
+}
+
+.plant-stage-navigator {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.plant-stage-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.plant-stage-title h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.plant-stage-title p {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.plant-stage-next-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.plant-stage-next-btn:hover {
+  background: var(--primary-light);
+  transform: translateY(-1px);
+}
+
+.plant-stage-steps {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  position: relative;
+}
+
+.plant-stage-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 16px 8px;
+  border-radius: var(--radius-sm);
+  background: white;
+  border: 2px solid var(--border-light);
+  position: relative;
+  transition: var(--transition);
+}
+
+.plant-stage-step.clickable {
+  cursor: pointer;
+}
+
+.plant-stage-step.clickable:hover {
+  border-color: var(--primary-light);
+  background: #f6faf6;
+}
+
+.plant-stage-step.completed {
+  border-color: var(--primary);
+  background: #f0f7f0;
+}
+
+.plant-stage-step.current {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: white;
+}
+
+.plant-stage-step.current .plant-stage-desc {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.plant-stage-step.upcoming {
+  opacity: 0.6;
+}
+
+.plant-stage-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: white;
+  color: var(--text-secondary);
+  border: 2px solid var(--border-light);
+  transition: var(--transition);
+}
+
+.plant-stage-step.completed .plant-stage-icon,
+.plant-stage-step.current .plant-stage-icon {
+  background: white;
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.plant-stage-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plant-stage-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.plant-step.current .plant-stage-label {
+  color: white;
+}
+
+.plant-stage-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  max-width: 100px;
+}
+
+.plant-stage-connector {
+  position: absolute;
+  right: -16px;
+  top: 40px;
+  width: 16px;
+  height: 2px;
+  background: var(--border-light);
+  z-index: 1;
+}
+
+.plant-stage-connector.active {
+  background: var(--primary);
+}
+
+.plant-stage-current {
+  display: flex;
+  gap: 24px;
+  padding: 16px;
+  background: white;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+}
+
+.plant-stage-current-info,
+.plant-stage-next-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.plant-stage-current-label,
+.plant-stage-next-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.plant-stage-current-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.plant-stage-next-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 .cd-actions {
   margin-top: 18px;
   display: flex;

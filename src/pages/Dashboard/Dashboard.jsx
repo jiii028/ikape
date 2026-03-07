@@ -18,6 +18,7 @@ import {
   Ruler,
   Eye,
   EyeOff,
+  Loader2,
 } from 'lucide-react'
 import ClusterFormModal from '../../components/ClusterFormModal/ClusterFormModal'
 import FarmFormModal from '../../components/FarmFormModal/FarmFormModal'
@@ -39,21 +40,23 @@ const STAGE_OVERVIEW = {
 }
 
 export default function Dashboard() {
-  const { farm, clusters, deleteCluster } = useFarm()
+  const { farm, clusters, deleteCluster, loading } = useFarm()
   const navigate = useNavigate()
   const [showClusterForm, setShowClusterForm] = useState(false)
   const [showFarmForm, setShowFarmForm] = useState(false)
   const [clustersVisible, setClustersVisible] = useState(true)
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, clusterId: null, clusterName: '' })
 
-  const farmHasDetails = farm && farm.farm_name && farm.farm_name !== 'My Farm' && farm.farm_area
+  const today = new Date()
+  const dayName = today.toLocaleDateString('en-US', { weekday: 'long' })
+  const dateStr = today.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+
+  const farmHasDetails = farm && farm.id && farm.farmName
+  const isLoading = loading && !farm // Loading state for initial fetch
 
   const totalTrees = clusters.reduce((sum, c) => sum + (parseInt(c.plantCount) || 0), 0)
   const harvestReady = clusters.filter((c) => c.plantStage === 'ready-to-harvest').length
 
-  const today = new Date()
-  const dayName = today.toLocaleDateString('en-US', { weekday: 'long' })
-  const dateStr = today.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
   const formatEstimatedDate = (date) =>
     date ? new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not set'
 
@@ -81,7 +84,14 @@ export default function Dashboard() {
       </div>
 
       {/* Farm Info Card */}
-      {!farmHasDetails ? (
+      {isLoading ? (
+        <div className="farm-info-card farm-info-loading">
+          <div className="farm-info-loading-content">
+            <Loader2 size={24} className="spin" />
+            <span>Loading farm details...</span>
+          </div>
+        </div>
+      ) : !farmHasDetails ? (
         <div className="farm-info-prompt">
           <div className="farm-info-prompt-content">
             <Leaf size={40} />
@@ -97,7 +107,7 @@ export default function Dashboard() {
           <div className="farm-info-header">
             <h3 className="farm-title">
               <Leaf size={18} />
-              {farm.farm_name}
+              {farm.farmName}
             </h3>
             <button className="btn-icon" onClick={() => setShowFarmForm(true)} title="Edit Farm">
               <Edit size={16} />
@@ -106,7 +116,7 @@ export default function Dashboard() {
           <div className="farm-info-details">
             <div className="farm-info-item">
               <Ruler size={14} />
-              <span>{farm.farm_area || '—'} hectares</span>
+              <span>{farm.farmArea || '—'} hectares</span>
             </div>
             <div className="farm-info-item">
               <Mountain size={14} />
@@ -114,11 +124,11 @@ export default function Dashboard() {
             </div>
             <div className="farm-info-item">
               <Coffee size={14} />
-              <span>{farm.plant_variety || '—'}</span>
+              <span>{farm.plantVariety || '—'}</span>
             </div>
             <div className="farm-info-item">
               <TreePine size={14} />
-              <span>{farm.overall_tree_count || '—'} trees</span>
+              <span>{farm.overallTreeCount || '—'} trees</span>
             </div>
           </div>
         </div>
@@ -330,11 +340,11 @@ export default function Dashboard() {
           onClose={() => setShowFarmForm(false)}
           editData={farm ? {
             id: farm.id,
-            farmName: farm.farm_name || '',
-            farmArea: farm.farm_area || '',
+            farmName: farm.farmName || '',
+            farmArea: farm.farmArea || '',
             elevation: farm.elevation || '',
-            plantVariety: farm.plant_variety || '',
-            overallTreeCount: farm.overall_tree_count || '',
+            plantVariety: farm.plantVariety || '',
+            overallTreeCount: farm.overallTreeCount || '',
           } : null}
         />
       )}

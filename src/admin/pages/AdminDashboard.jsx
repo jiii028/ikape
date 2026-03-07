@@ -168,8 +168,13 @@ export default function AdminDashboard() {
 
 
     useEffect(() => {
-        // Fetch from new Python Backend
+        // Fetch from new Python Backend (if available)
         fetchOverview().then(data => {
+            if (!data) {
+                // Backend analytics not available, will rely on Supabase data
+                console.log("Using Supabase data for dashboard");
+                return;
+            }
             console.log("Analytics Data from Backend:", data);
 
             // Update state with backend data
@@ -194,7 +199,10 @@ export default function AdminDashboard() {
                     ]);
                 }
             }
-        }).catch(err => console.error("Backend fetch error:", err));
+        }).catch(err => {
+            // Fallback to Supabase data if backend fails
+            console.log("Backend unavailable, using Supabase data:", err);
+        });
 
         // Keep existing fetch for now to fill gaps (like critical farms list)
         fetchDashboardData();

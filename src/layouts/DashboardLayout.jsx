@@ -200,7 +200,7 @@ export default function DashboardLayout() {
       items.push(...serverNotifications)
     }
 
-    if (!farm?.farm_name || farm.farm_name === 'My Farm') {
+    if (!farm?.id || !farm?.farmName) {
       items.push({
         id: 'farm-register',
         title: 'Farm details are incomplete',
@@ -417,12 +417,12 @@ export default function DashboardLayout() {
       }))
 
     const farmResults =
-      farm?.farm_name && farm.farm_name.toLowerCase().includes(normalizedSearch)
+      farm?.farmName && farm.farmName.toLowerCase().includes(normalizedSearch)
         ? [
             {
               id: `farm-${farm.id || 'current'}`,
               type: 'farm',
-              label: farm.farm_name,
+              label: farm.farmName,
               detail: 'Farm overview',
               icon: LayoutDashboard,
               path: '/dashboard',

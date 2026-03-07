@@ -1,17 +1,33 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Save, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Save, ChevronDown, ChevronRight, Sprout, TreePine, Flower2, PackageCheck } from 'lucide-react'
 import { useFarm } from '../../context/FarmContext'
 import { supabase } from '../../lib/supabase'
 import ConfirmDialog from '../../components/ConfirmDialog/ConfirmDialog'
 import './ClusterDetail.css'
 
 const STAGE_OPTIONS = [
-  { value: 'seed-sapling', label: 'Sapling' },
-  { value: 'tree', label: 'Tree' },
-  { value: 'flowering', label: 'Flowering' },
-  { value: 'ready-to-harvest', label: 'Ready to Harvest' },
+  { value: 'seed-sapling', label: 'Sapling', icon: Sprout, description: 'Young coffee plant' },
+  { value: 'tree', label: 'Tree', icon: TreePine, description: 'Mature coffee tree' },
+  { value: 'flowering', label: 'Flowering', icon: Flower2, description: 'Flowering stage' },
+  { value: 'ready-to-harvest', label: 'Ready to Harvest', icon: PackageCheck, description: 'Ready for harvest' },
 ]
+
+// Get stage index for progression logic
+const getStageIndex = (stageValue) => STAGE_OPTIONS.findIndex(s => s.value === stageValue)
+
+// Check if can go back to a previous stage
+const canGoBackToStage = (currentStage, targetStage) => {
+  const currentIdx = getStageIndex(currentStage)
+  const targetIdx = getStageIndex(targetStage)
+  
+  // Once tree is reached, cannot go back to sapling
+  if (currentStage === 'tree' && targetStage === 'seed-sapling') return false
+  if (currentStage === 'flowering' && targetStage === 'seed-sapling') return false
+  if (currentStage === 'ready-to-harvest' && targetStage === 'seed-sapling') return false
+  
+  return targetIdx < currentIdx
+}
 
 const VARIETY_OPTIONS = ['Robusta', 'Arabica', 'Liberica', 'Excelsa', 'Others']
 const FERTILIZER_TYPE_OPTIONS = ['Organic', 'Non-Organic']
@@ -211,6 +227,109 @@ function getPercentageValidationError(formValues) {
   }
 
   return ''
+}
+
+// Plant Stage Navigator Component
+function PlantStageNavigator({ currentStage, onStageChange, clusterName }) {
+  const currentIdx = getStageIndex(currentStage)
+  const isLastStage = currentIdx === STAGE_OPTIONS.length - 1
+  
+  const handleNext = () => {
+    if (!isLastStage) {
+      const nextStage = STAGE_OPTIONS[currentIdx + 1].value
+      onStageChange(nextStage)
+    }
+  }
+  
+  const handleStageClick = (stageValue) => {
+    const targetIdx = getStageIndex(stageValue)
+    
+    // Can only click on completed stages or current stage
+    if (targetIdx <= currentIdx) {
+      // Check if we can go back
+      if (canGoBackToStage(currentStage, stageValue)) {
+        onStageChange(stageValue)
+      } else if (stageValue === currentStage) {
+        // Already on this stage, do nothing
+        return
+      } else {
+        // Cannot go back to this stage (e.g., tree -> sapling)
+        alert('Cannot go back to Sapling stage once plant has reached Tree stage or beyond.')
+      }
+    }
+  }
+  
+  return (
+    <div className="plant-stage-navigator">
+      <div className="plant-stage-header">
+        <div className="plant-stage-title">
+          <h3>Plant Stage</h3>
+          <p>Track and manage the growth stages of your coffee plants</p>
+        </div>
+        {!isLastStage && (
+          <button
+            className="plant-stage-next-btn"
+            onClick={handleNext}
+            title={`Move to ${STAGE_OPTIONS[currentIdx + 1].label}`}
+          >
+            Next Stage <ChevronRight size={18} />
+          </button>
+        )}
+      </div>
+      
+      <div className="plant-stage-steps">
+        {STAGE_OPTIONS.map((stage, idx) => {
+          const StageIcon = stage.icon
+          const isCompleted = idx < currentIdx
+          const isCurrent = idx === currentIdx
+          const isUpcoming = idx > currentIdx
+          const canClick = idx <= currentIdx && canGoBackToStage(currentStage, stage.value)
+          
+          return (
+            <div
+              key={stage.value}
+              className={`plant-stage-step
+                ${isCompleted ? 'completed' : ''}
+                ${isCurrent ? 'current' : ''}
+                ${isUpcoming ? 'upcoming' : ''}
+                ${canClick ? 'clickable' : ''}
+              `}
+              onClick={() => handleStageClick(stage.value)}
+              title={isCurrent ? 'Current stage' : isCompleted ? 'Click to go back' : 'Upcoming stage'}
+            >
+              <div className="plant-stage-icon">
+                <StageIcon size={24} />
+              </div>
+              <div className="plant-stage-info">
+                <span className="plant-stage-label">{stage.label}</span>
+                <span className="plant-stage-desc">{stage.description}</span>
+              </div>
+              {idx < STAGE_OPTIONS.length - 1 && (
+                <div className={`plant-stage-connector ${idx < currentIdx ? 'active' : ''}`} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+      
+      <div className="plant-stage-current">
+        <div className="plant-stage-current-info">
+          <span className="plant-stage-current-label">Current Stage</span>
+          <span className="plant-stage-current-value">
+            {STAGE_OPTIONS[currentIdx].label}
+          </span>
+        </div>
+        {!isLastStage && (
+          <div className="plant-stage-next-info">
+            <span className="plant-stage-next-label">Next</span>
+            <span className="plant-stage-next-value">
+              {STAGE_OPTIONS[currentIdx + 1].label}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 export default function ClusterDetail() {
@@ -432,7 +551,24 @@ export default function ClusterDetail() {
   }
 
   const handleStageChange = async (e) => {
-    const nextStage = e.target.value
+    // Handle both event objects and direct string values
+    const nextStage = typeof e === 'string' ? e : e.target.value
+    
+    // Validate required fields before advancing
+    const validation = validateStageProgression(cluster, nextStage)
+    if (!validation.valid) {
+      alert(validation.message)
+      return
+    }
+    
+    // Show confirmation for stage advancement
+    const currentStageLabel = STAGE_OPTIONS.find(s => s.value === cluster.plantStage)?.label || cluster.plantStage
+    const nextStageLabel = STAGE_OPTIONS.find(s => s.value === nextStage)?.label || nextStage
+    
+    if (!window.confirm(`Are you sure you want to advance from "${currentStageLabel}" to "${nextStageLabel}"?\n\n${validation.warning || ''}`)) {
+      return
+    }
+    
     const resolvedVariety =
       (typeof form?.variety === 'string' && form.variety.trim()) ||
       (typeof cluster?.stageData?.variety === 'string' && cluster.stageData.variety.trim()) ||
@@ -465,6 +601,52 @@ export default function ClusterDetail() {
     const result = await updateCluster(cluster.id, updates)
     if (!result?.success) {
       setFormError(result?.error || 'Unable to update plant stage.')
+    }
+  }
+  
+  // Validation function for stage progression
+  const validateStageProgression = (cluster, nextStage) => {
+    const currentStage = cluster.plantStage
+    const stageData = cluster.stageData || {}
+    
+    // Basic validation - variety should be set
+    if (!cluster.variety && !stageData.variety) {
+      return {
+        valid: false,
+        message: 'Please set a variety for this cluster before advancing stages.',
+      }
+    }
+    
+    // Stage-specific validations
+    const validations = []
+    
+    // Sapling -> Tree: Must have date planted
+    if (currentStage === 'seed-sapling' && nextStage === 'tree') {
+      if (!stageData.datePlanted) {
+        return {
+          valid: false,
+          message: 'Date Planted is required before moving to Tree stage. Please fill in the Date Planted field first.',
+        }
+      }
+    }
+    
+    // Tree -> Flowering: Should have agriclimatic data
+    if (currentStage === 'tree' && nextStage === 'flowering') {
+      if (!stageData.monthlyTemperature || !stageData.rainfall) {
+        validations.push('Temperature and Rainfall data are recommended before flowering.')
+      }
+    }
+    
+    // Flowering -> Ready to Harvest: Should have actual flowering date
+    if (currentStage === 'flowering' && nextStage === 'ready-to-harvest') {
+      if (!stageData.actualFloweringDate) {
+        validations.push('Actual Flowering Date should be recorded before harvest.')
+      }
+    }
+    
+    return {
+      valid: true,
+      warning: validations.length > 0 ? 'Recommendations:\n• ' + validations.join('\n• ') : '',
     }
   }
 
@@ -575,17 +757,29 @@ export default function ClusterDetail() {
           <h1>{cluster.clusterName}</h1>
           <p>Area: {cluster.areaSize} sqm | Plants: {cluster.plantCount}</p>
         </div>
-        <div className="cd-stage">
-          <label>Plant Stage</label>
-          <select value={cluster.plantStage} onChange={handleStageChange}>
-            {STAGE_OPTIONS.map((stage) => (
-              <option key={stage.value} value={stage.value}>
-                {stage.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {!isOverviewSection && (
+          <div className="cd-stage">
+            <label>Plant Stage</label>
+            <select value={cluster.plantStage} onChange={handleStageChange}>
+              {STAGE_OPTIONS.map((stage) => (
+                <option key={stage.value} value={stage.value}>
+                  {stage.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
+
+      {isOverviewSection && (
+        <div className="cd-card plant-stage-card">
+          <PlantStageNavigator
+            currentStage={cluster.plantStage}
+            onStageChange={handleStageChange}
+            clusterName={cluster.clusterName}
+          />
+        </div>
+      )}
 
       <div className="cd-card">
         <h2>{SECTION_TITLES[section]}</h2>

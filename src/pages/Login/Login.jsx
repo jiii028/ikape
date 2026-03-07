@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { Sprout, Eye, EyeOff, Leaf, Coffee, Flower2, LogIn, KeyRound } from 'lucide-react'
-import LoadingScreen from '../../components/LoadingScreen'
 import ForgotPasswordModal from '../../components/ForgotPasswordModal/ForgotPasswordModal'
 import './Login.css'
 
@@ -10,7 +9,6 @@ export default function Login() {
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [isLoggingIn, setIsLoggingIn] = useState(false)
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
   const [registerSuccessMessage, setRegisterSuccessMessage] = useState('')
   const { login, error, setError, requestPasswordReset } = useAuth()
@@ -35,18 +33,8 @@ export default function Login() {
       return
     }
 
-    setIsLoggingIn(true)
-
     try {
-      // Safety timeout: if login hangs (e.g. RLS-blocked query), recover after 15s
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('timeout')), 15000)
-      )
-
-      const result = await Promise.race([
-        login(identifier, password),
-        timeoutPromise,
-      ])
+      const result = await login(identifier, password)
 
       if (result.success) {
         // Navigate based on the ACTUAL DB role returned
@@ -55,24 +43,11 @@ export default function Login() {
         } else {
           navigate('/dashboard', { replace: true })
         }
-        return // keep loading screen during navigation
       }
     } catch (err) {
-      if (err.message === 'timeout') {
-        setError('Login is taking too long. Please check your connection and try again.')
-      } else {
-        console.error('Login error:', err)
-        setError('An unexpected error occurred. Please try again.')
-      }
+      console.error('Login error:', err)
+      setError('An unexpected error occurred. Please try again.')
     }
-
-    // Always clear loading on failure
-    setIsLoggingIn(false)
-  }
-
-  // Show loading screen during login transition
-  if (isLoggingIn) {
-    return <LoadingScreen message="Signing you in..." />
   }
 
   const defaultForgotEmail = identifier.includes('@') ? identifier : ''

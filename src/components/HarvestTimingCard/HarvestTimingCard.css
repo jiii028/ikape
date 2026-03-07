@@ -1,0 +1,234 @@
+/* Harvest Timing Card Styles */
+
+.harvest-timing-card {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border: 1px solid #f59e0b;
+  border-radius: var(--radius-md, 8px);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.harvest-timing-card--loading,
+.harvest-timing-card--error {
+  background: #fef3c7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  gap: 10px;
+}
+
+.harvest-timing-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #92400e;
+  font-size: 14px;
+}
+
+.harvest-timing-loading .spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.harvest-timing-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.harvest-timing-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.harvest-timing-title h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #92400e;
+  margin: 0;
+}
+
+.harvest-timing-refresh {
+  background: rgba(255, 255, 255, 0.5);
+  border: none;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #92400e;
+  transition: all 0.2s;
+}
+
+.harvest-timing-refresh:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.harvest-timing-countdown {
+  text-align: center;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: var(--radius-sm, 6px);
+  margin-bottom: 12px;
+}
+
+.countdown-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #78350f;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.countdown-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.countdown-status {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  margin-top: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.harvest-timing-dates {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.harvest-date-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.harvest-date-item svg {
+  color: #92400e;
+  flex-shrink: 0;
+}
+
+.harvest-date-item div {
+  display: flex;
+  flex-direction: column;
+}
+
+.harvest-date-item--optimal .date-value {
+  font-weight: 600;
+  color: #78350f;
+}
+
+.date-label {
+  font-size: 10px;
+  color: #92400e;
+  text-transform: uppercase;
+}
+
+.date-value {
+  font-size: 12px;
+  color: #78350f;
+}
+
+.harvest-timing-details {
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: var(--radius-sm, 6px);
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+.detail-row:not(:last-child) {
+  border-bottom: 1px solid rgba(146, 64, 14, 0.1);
+}
+
+.detail-row span:first-child {
+  color: #92400e;
+}
+
+.detail-value {
+  font-weight: 600;
+  color: #78350f;
+}
+
+.harvest-timing-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #92400e;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(146, 64, 14, 0.1);
+}
+
+.harvest-timing-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid rgba(146, 64, 14, 0.15);
+}
+
+.model-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 8px;
+  text-transform: uppercase;
+}
+
+.model-badge--ml {
+  background: #8b5cf6;
+  color: white;
+}
+
+.model-badge--rule {
+  background: #6b7280;
+  color: white;
+}
+
+.last-updated {
+  font-size: 10px;
+  color: #92400e;
+  opacity: 0.8;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .harvest-timing-card {
+    padding: 12px;
+  }
+  
+  .countdown-value {
+    font-size: 24px;
+  }
+  
+  .harvest-timing-countdown {
+    padding: 10px;
+  }
+}

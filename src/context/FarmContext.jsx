@@ -163,7 +163,11 @@ export function FarmProvider({ children }) {
     if (!forceRefresh) {
       const cachedSnapshot = getCached(cacheKey, FARM_CACHE_TTL_MS)
       if (cachedSnapshot?.farm) {
-        setFarm(cachedSnapshot.farm)
+        // Normalize cached farm data to ensure camelCase properties
+        const normalizedFarm = cachedSnapshot.farm.farmName 
+          ? cachedSnapshot.farm  // Already normalized
+          : mapFarmFromDb(cachedSnapshot.farm)  // Needs normalization
+        setFarm(normalizedFarm)
         setClusters(Array.isArray(cachedSnapshot.clusters) ? cachedSnapshot.clusters : [])
         setLoading(false)
         return
@@ -177,7 +181,9 @@ export function FarmProvider({ children }) {
         const cachedFarms = await getCachedData('farms')
         if (cachedFarms && cachedFarms.length > 0) {
           const offlineFarm = cachedFarms[0]
-          setFarm(offlineFarm)
+          // Normalize the offline farm data to match camelCase format
+          const normalizedOfflineFarm = mapFarmFromDb(offlineFarm)
+          setFarm(normalizedOfflineFarm)
           setClusters(offlineFarm.clusters || [])
         }
       } catch (err) {
@@ -225,8 +231,11 @@ export function FarmProvider({ children }) {
   }, [authUser, persistFarmSnapshot])
 
   useEffect(() => {
-    fetchFarmData()
-  }, [fetchFarmData])
+    // Only fetch if we have a user and either no farm loaded or auth just became available
+    if (authUser?.id) {
+      fetchFarmData()
+    }
+  }, [fetchFarmData, authUser?.id])
 
   const setFarmInfo = async (farmData) => {
     const toNumber = (value) => {

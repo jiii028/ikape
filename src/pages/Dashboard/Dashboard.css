@@ -4,6 +4,39 @@
   gap: 28px;
 }
 
+/* Loading spinner animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Farm info loading state */
+.farm-info-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  background: var(--bg-white);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-light);
+}
+
+.farm-info-loading-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
 .dash-header {
   display: flex;
   align-items: center;

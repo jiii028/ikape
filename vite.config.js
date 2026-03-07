@@ -15,20 +15,34 @@ export default defineConfig({
         description: 'Offline Coffee Quality Grading & Predictions',
         theme_color: '#ffffff',
         icons: [
-          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' }
+          { src: 'logo.png', sizes: '192x192', type: 'image/png' },
+          { src: 'logo.png', sizes: '512x512', type: 'image/png' }
         ]
       },
       workbox: {
-        maximumFileSizeToCacheInBytes: 5000000, // 5MB
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,onnx}']
+        maximumFileSizeToCacheInBytes: 50000000, // 50MB for large ONNX models
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,onnx}'],
+        navigateFallback: 'index.html',
+        navigateFallbackAllowlist: [/^\/[^.]*$/], // Match all routes except files with extensions
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/[^/]+\.(?:png|gif|jpg|svg|ico)$/i,
+            handler: 'CacheFirst',
+            options: { cacheName: 'images' }
+          }
+        ]
+      },
+      devOptions: {
+        enabled: true,
+        type: 'classic',
+        navigateFallback: 'index.html'
       }
     })
   ],
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true
       }
     }

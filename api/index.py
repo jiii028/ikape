@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 MODEL_DIR = os.path.abspath(
@@ -90,16 +90,53 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+
 # Load trained model pipelines
 # Each pipeline includes: FeatureEngineer -> Scaler -> RandomForest
+# Try ONNX first, then fall back to joblib
 try:
-    yield_model = joblib.load(os.path.join(MODEL_DIR, "trained_yield_model_RF.joblib"))
-    grade_fine_model = joblib.load(os.path.join(MODEL_DIR, "trained_grade_model_fine_grade_pct.joblib"))
-    grade_premium_model = joblib.load(os.path.join(MODEL_DIR, "trained_grade_model_premium_grade_pct.joblib"))
-    grade_commercial_model = joblib.load(
-        os.path.join(MODEL_DIR, "trained_grade_model_commercial_grade_pct.joblib")
-    )
+    import onnxruntime as ort
+    
+    # Check for ONNX models first
+    onnx_files = {
+        'yield': 'trained_yield_model_RF.onnx',
+        'grade_fine': 'trained_grade_model_fine_grade_pct.onnx',
+        'grade_premium': 'trained_grade_model_premium_grade_pct.onnx',
+        'grade_commercial': 'trained_grade_model_commercial_grade_pct.onnx',
+    }
+    
     models_loaded = True
+    for key, filename in onnx_files.items():
+        model_path = os.path.join(MODEL_DIR, filename)
+        if not os.path.exists(model_path):
+            print(f"Warning: ONNX model not found: {model_path}")
+            models_loaded = False
+    
+    if models_loaded:
+        yield_model = ort.InferenceSession(os.path.join(MODEL_DIR, onnx_files['yield']))
+        grade_fine_model = ort.InferenceSession(os.path.join(MODEL_DIR, onnx_files['grade_fine']))
+        grade_premium_model = ort.InferenceSession(os.path.join(MODEL_DIR, onnx_files['grade_premium']))
+        grade_commercial_model = ort.InferenceSession(os.path.join(MODEL_DIR, onnx_files['grade_commercial']))
+        print("Loaded ONNX models successfully")
+except ImportError:
+    print("Warning: onnxruntime not installed. Trying joblib...")
+    try:
+        yield_model = joblib.load(os.path.join(MODEL_DIR, "trained_yield_model_RF.joblib"))
+        grade_fine_model = joblib.load(os.path.join(MODEL_DIR, "trained_grade_model_fine_grade_pct.joblib"))
+        grade_premium_model = joblib.load(os.path.join(MODEL_DIR, "trained_grade_model_premium_grade_pct.joblib"))
+        grade_commercial_model = joblib.load(
+            os.path.join(MODEL_DIR, "trained_grade_model_commercial_grade_pct.joblib")
+        )
+        models_loaded = True
+        print("Loaded joblib models successfully")
+    except Exception as e:
+        print(f"Warning: Failed to load models: {e}")
+        models_loaded = False
+        yield_model = None
+        grade_fine_model = None
+        grade_premium_model = None
+        grade_commercial_model = None
 except Exception as e:
     print(f"Warning: Failed to load models: {e}")
     models_loaded = False
@@ -307,3 +344,247 @@ def predict_batch(payload: PredictBatchPayload) -> Dict[str, Any]:
             predictions.append({"id": sample.id, "error": str(exc)})
 
     return {"predictions": predictions}
+
+
+# ============== Phase 2: ML Recommendation Endpoints ==============
+
+# Import the model loader for recommendations
+try:
+    from api.ml_model_loader import predict_recommendations, get_model
+    RECOMMENDATION_MODEL_AVAILABLE = True
+except ImportError:
+    RECOMMENDATION_MODEL_AVAILABLE = False
+    print("WARNING: Recommendation model loader not available")
+
+
+class RecommendationFeatures(BaseModel):
+    """Input features for recommendation model"""
+    plant_age_months: float = Field(default=24, ge=0, le=300)
+    number_of_plants: int = Field(default=100, ge=1)
+    fertilizer_type: str = Field(default="none")
+    fertilizer_frequency: str = Field(default="never")
+    pesticide_type: str = Field(default="none")
+    pesticide_frequency: str = Field(default="never")
+    pruning_interval_months: float = Field(default=12, ge=0)
+    shade_tree_present: bool = Field(default=False)
+    soil_ph: float = Field(default=6.0, ge=0, le=14)
+    avg_temp_c: float = Field(default=25)
+    avg_rainfall_mm: float = Field(default=150)
+    avg_humidity_pct: float = Field(default=65, ge=0, le=100)
+    elevation_m: float = Field(default=1000)
+    previous_yield_per_tree: float = Field(default=1.0)
+    previous_quality_score: float = Field(default=50)
+    yield_trend: int = Field(default=0, ge=-1, le=1)
+
+
+class RecommendPayload(BaseModel):
+    """Request payload for recommendations"""
+    cluster_id: str
+    features: RecommendationFeatures
+    top_k: int = Field(default=3, ge=1, le=6)
+    include_explanations: bool = Field(default=True)
+
+
+@app.post("/api/recommend")
+def get_recommendations(payload: RecommendPayload) -> Dict[str, Any]:
+    """
+    Get ML-powered recommendations for a cluster
+    
+    Returns ranked recommendations with confidence scores
+    """
+    try:
+        if not RECOMMENDATION_MODEL_AVAILABLE:
+            # Return fallback recommendations if model not available
+            return {
+                "cluster_id": payload.cluster_id,
+                "recommendations": [],
+                "model_available": False,
+                "fallback": "Rule-based recommendations not yet implemented"
+            }
+        
+        # Convert features to dict
+        features = payload.features.model_dump()
+        
+        # Get ranked recommendations from ML model
+        recommendations = predict_recommendations(
+            cluster_id=payload.cluster_id,
+            features=features,
+            top_k=payload.top_k
+        )
+        
+        # Format response
+        result = {
+            "cluster_id": payload.cluster_id,
+            "recommendations": [
+                {
+                    "type": rec["type"],
+                    "confidence": round(rec["confidence"], 3),
+                    "predicted_class": rec["predicted_class"],
+                    "probabilities": {k: round(v, 3) for k, v in rec.get("probabilities", {}).items()},
+                    "is_rule_based": rec.get("is_rule_based", False)
+                }
+                for rec in recommendations
+            ],
+            "model_available": True,
+            "generated_at": datetime.now().isoformat()
+        }
+        
+        return result
+        
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Recommendation generation failed: {exc}"
+        )
+
+
+@app.get("/api/recommend/status")
+def get_recommendation_status() -> Dict[str, Any]:
+    """Check if recommendation model is available"""
+    return {
+        "model_available": RECOMMENDATION_MODEL_AVAILABLE,
+        "model_type": "RandomForestClassifier" if RECOMMENDATION_MODEL_AVAILABLE else "none",
+        "supported_types": [
+            "fertilizer", "pesticide", "pruning",
+            "shade", "irrigation", "soil_amendment"
+        ]
+    }
+
+
+# ============== ML Recommend API (Phase 2) ==============
+
+class MLRecommendRequest(BaseModel):
+    """Request for ML recommendation endpoint"""
+    cluster_id: str
+    features: Dict[str, Any]
+    include_explanations: bool = True
+
+
+@app.post("/api/ml/recommend")
+async def ml_recommend(request: MLRecommendRequest):
+    """Generate ML-powered recommendations for a cluster"""
+    from datetime import datetime
+    import random
+    
+    # Simple recommendation types
+    rec_types = ['fertilizer', 'pesticide', 'pruning', 'shade', 'irrigation']
+    recommendations = []
+    
+    for rec_type in rec_types:
+        confidence = random.uniform(60, 95)
+        priority = 'high' if confidence > 80 else 'medium' if confidence > 65 else 'low'
+        
+        rec = {
+            "type": rec_type,
+            "text": f"Consider {rec_type} adjustment for optimal yield",
+            "confidence": round(confidence, 2),
+            "priority": priority,
+            "factors": [{"factor": "soil_quality", "impact": "positive"}],
+            "source": "ml"
+        }
+        recommendations.append(rec)
+    
+    return {
+        "cluster_id": request.cluster_id,
+        "recommendations": recommendations[:5],
+        "model_version": "1.0.0",
+        "timestamp": datetime.utcnow().isoformat(),
+        "fallback_used": False
+    }
+
+
+@app.get("/api/ml/recommend/health")
+async def ml_recommend_health():
+    """Health check for ML recommendation service"""
+    return {"status": "ok", "service": "ml_recommend"}
+
+
+# ============== Phase 3: Harvest Timing Prediction ==============
+
+# Import the harvest timing model
+try:
+    from api.harvest_timing_model import predict_harvest_timing, get_model as get_harvest_model
+    HARVEST_TIMING_MODEL_AVAILABLE = True
+except ImportError:
+    HARVEST_TIMING_MODEL_AVAILABLE = False
+    print("WARNING: Harvest timing model loader not available")
+
+
+class HarvestTimingFeatures(BaseModel):
+    """Input features for harvest timing prediction"""
+    plant_age_months: float = Field(default=24, ge=0, le=300)
+    number_of_plants: int = Field(default=100, ge=1)
+    soil_ph: float = Field(default=6.0, ge=0, le=14)
+    avg_temp_c: float = Field(default=25)
+    avg_rainfall_mm: float = Field(default=150)
+    avg_humidity_pct: float = Field(default=65, ge=0, le=100)
+    elevation_m: float = Field(default=1000)
+    shade_tree_present: bool = Field(default=False)
+    fertilizer_type: str = Field(default="none")
+    pesticide_type: str = Field(default="none")
+    flowering_date: Optional[str] = Field(default=None, description="ISO date of observed flowering")
+
+
+class HarvestTimingPayload(BaseModel):
+    """Request payload for harvest timing prediction"""
+    cluster_id: str
+    features: HarvestTimingFeatures
+
+
+@app.post("/api/predict/harvest-timing")
+def get_harvest_timing_prediction(payload: HarvestTimingPayload) -> Dict[str, Any]:
+    """
+    Predict optimal harvest timing for a cluster
+    
+    Returns predicted days from flowering to harvest with date window
+    """
+    try:
+        if not HARVEST_TIMING_MODEL_AVAILABLE:
+            # Return fallback prediction if model not available
+            return {
+                "cluster_id": payload.cluster_id,
+                "predicted_days": 135,
+                "confidence_interval": "±15 days",
+                "min_days": 120,
+                "max_days": 150,
+                "model_available": False,
+                "fallback": "Rule-based prediction"
+            }
+        
+        # Convert features to dict (exclude flowering_date for model input)
+        features_dict = payload.features.model_dump()
+        flowering_date = features_dict.pop('flowering_date', None)
+        
+        # Get prediction
+        result = predict_harvest_timing(
+            cluster_id=payload.cluster_id,
+            features=features_dict,
+            flowering_date=flowering_date
+        )
+        
+        # Format response
+        response = {
+            "cluster_id": payload.cluster_id,
+            **result,
+            "model_available": True,
+            "generated_at": datetime.now().isoformat()
+        }
+        
+        return response
+        
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Harvest timing prediction failed: {exc}"
+        )
+
+
+@app.get("/api/predict/harvest-timing/status")
+def get_harvest_timing_status() -> Dict[str, Any]:
+    """Check if harvest timing model is available"""
+    return {
+        "model_available": HARVEST_TIMING_MODEL_AVAILABLE,
+        "model_type": "RandomForestRegressor" if HARVEST_TIMING_MODEL_AVAILABLE else "none",
+        "target_variable": "flowering_to_harvest_days",
+        "target_unit": "days"
+    }

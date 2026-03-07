@@ -13,7 +13,6 @@ import HarvestRecords from './pages/HarvestRecords/HarvestRecords'
 import Recommendations from './pages/Recommendations/Recommendations'
 import Settings from './pages/Settings/Settings'
 import ClusterDetail from './pages/ClusterDetail/ClusterDetail'
-import LoadingScreen from './components/LoadingScreen'
 
 // Admin imports
 import AdminLayout from './admin/AdminLayout'
@@ -26,8 +25,7 @@ import AgriclimaticInputs from './admin/pages/AgriclimaticInputs'
 
 // Farmer-only routes: must be logged in AND role === 'farmer'
 function FarmerRoute({ children }) {
-  const { user, loading } = useAuth()
-  if (loading) return <LoadingScreen message="Loading your farm..." />
+  const { user } = useAuth()
   if (!user) return <Navigate to="/login" replace />
   if (user.role !== 'farmer') {
     return <Navigate to={user.role === 'admin' ? '/admin/dashboard' : '/dashboard'} replace />
@@ -37,8 +35,7 @@ function FarmerRoute({ children }) {
 
 // Admin-only routes: must be logged in AND role === 'admin'
 function AdminRoute({ children }) {
-  const { user, loading } = useAuth()
-  if (loading) return <LoadingScreen message="Loading admin panel..." />
+  const { user } = useAuth()
   if (!user) return <Navigate to="/login" replace />
   if (user.role !== 'admin') {
     return <Navigate to={user.role === 'farmer' ? '/dashboard' : '/admin/dashboard'} replace />
@@ -48,8 +45,7 @@ function AdminRoute({ children }) {
 
 // Guest routes: only accessible if NOT logged in
 function GuestRoute({ children }) {
-  const { user, loading } = useAuth()
-  if (loading) return <LoadingScreen message="Checking your session..." />
+  const { user } = useAuth()
   if (user) {
     // Redirect to correct dashboard based on DB role
     return <Navigate to={user.role === 'admin' ? '/admin/dashboard' : '/dashboard'} replace />
@@ -59,8 +55,7 @@ function GuestRoute({ children }) {
 
 // Root "/" handler: redirects based on role or to login
 function HomeRedirect() {
-  const { user, loading } = useAuth()
-  if (loading) return <LoadingScreen message="Welcome to IKAPE..." />
+  const { user } = useAuth()
   if (!user) return <Navigate to="/login" replace />
   return <Navigate to={user.role === 'admin' ? '/admin/dashboard' : '/dashboard'} replace />
 }

@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useFarm } from '../../context/FarmContext'
+import { fetchRecommendations } from '../../api/recommend'
+import { trackRecommendationAction } from '../../lib/recommendationTracker'
 import {
   Lightbulb,
   AlertTriangle,
@@ -12,6 +14,8 @@ import {
   Minus,
   Layers,
   X,
+  Brain,
+  RefreshCw,
 } from 'lucide-react'
 import './Recommendations.css'
 
@@ -157,14 +161,91 @@ function getPerformanceLevel(cluster) {
   return 'good'
 }
 
+// Convert cluster data to ML features
+function clusterToMLFeatures(cluster) {
+  const sd = cluster.stageData || {}
+  return {
+    plant_age_months: parseFloat(sd.plantAgeMonths) || 24,
+    number_of_plants: parseInt(sd.treeCount) || 100,
+    fertilizer_type: sd.fertilizerType || 'none',
+    fertilizer_frequency: sd.fertilizerFrequency || 'never',
+    pesticide_type: sd.pesticideType || 'none',
+    pesticide_frequency: sd.pesticideFrequency || 'never',
+    pruning_interval_months: parseFloat(sd.lastPrunedDate ? 
+      ((new Date() - new Date(sd.lastPrunedDate)) / (1000 * 60 * 60 * 24 * 30)) : 12) || 12,
+    shade_tree_present: sd.shadeTrees === 'Yes',
+    soil_ph: parseFloat(sd.soilPh) || 6.0,
+    avg_temp_c: parseFloat(sd.monthlyTemperature) || 25,
+    avg_rainfall_mm: parseFloat(sd.rainfall) || 150,
+    avg_humidity_pct: parseFloat(sd.humidity) || 65,
+    elevation_m: parseFloat(sd.elevation) || 1000,
+    previous_yield_per_tree: parseFloat(sd.previousYield) / parseInt(sd.treeCount) || 1.0,
+    previous_quality_score: 50, // Default quality score
+    yield_trend: 0 // Neutral trend by default
+  }
+}
+
+// Fetch ML recommendations for a cluster
+async function fetchMLRecommendations(clusterId, features, setRecommendations, setLoading, setError) {
+  setLoading(prev => ({ ...prev, [clusterId]: true }))
+  setError(prev => ({ ...prev, [clusterId]: null }))
+  
+  try {
+    const result = await fetchRecommendations(clusterId, features)
+    setRecommendations(prev => ({ ...prev, [clusterId]: result.recommendations || [] }))
+  } catch (err) {
+    console.error('ML recommendation error:', err)
+    setError(prev => ({ ...prev, [clusterId]: err.message }))
+  } finally {
+    setLoading(prev => ({ ...prev, [clusterId]: false }))
+  }
+}
+
+// Handle accept/reject user actions
+function handleUserAction(clusterId, recType, action) {
+  setUserActions(prev => ({
+    ...prev,
+    [`${clusterId}-${recType}`]: action
+  }))
+  
+  // Track action for later sync
+  trackRecommendationAction({
+    cluster_id: clusterId,
+    recommendation_type: recType,
+    action: action,
+    timestamp: new Date().toISOString()
+  })
+}
+
 export default function Recommendations() {
   const { getAllClusters } = useFarm()
   const [performanceFilter, setPerformanceFilter] = useState('')
   const [seasonFilter, setSeasonFilter] = useState('')
   const [selectedCluster, setSelectedCluster] = useState(null)
   const [mobilePanel, setMobilePanel] = useState('list')
+  
+  // ML Recommendation state
+  const [mlRecommendations, setMlRecommendations] = useState({})
+  const [mlLoading, setMlLoading] = useState({})
+  const [mlError, setMlError] = useState({})
+  const [showWhyThis, setShowWhyThis] = useState({}) // Track which recommendations have expanded 'why' section
+  const [userActions, setUserActions] = useState({}) // Track accept/reject status
 
   const allClusters = getAllClusters()
+  
+  // Fetch ML recommendations when cluster is selected
+  useEffect(() => {
+    if (!selectedCluster || mlRecommendations[selectedCluster.id]) return
+    
+    const features = clusterToMLFeatures(selectedCluster)
+    fetchMLRecommendations(
+      selectedCluster.id,
+      features,
+      setMlRecommendations,
+      setMlLoading,
+      setMlError
+    )
+  }, [selectedCluster])
   const clustersWithAnalysis = allClusters.map((c) => ({
     ...c,
     issues: analyzeCluster(c),
@@ -347,6 +428,127 @@ export default function Recommendations() {
               >
                 <X size={18} />
               </button>
+            </div>
+
+            {/* ML Recommendations Section */}
+            {mlLoading[selectedCluster.id] ? (
+              <div className="ml-loading">
+                <Brain size={20} className="spin" />
+                <span>Analyzing with ML...</span>
+              </div>
+            ) : mlRecommendations[selectedCluster.id]?.length > 0 ? (
+              <div className="ml-recommendations">
+                <div className="ml-header">
+                  <Brain size={18} />
+                  <h4>AI Recommendations</h4>
+                  <span className="ml-badge">ML Powered</span>
+                </div>
+                {mlRecommendations[selectedCluster.id].map((rec, idx) => {
+                  const confidencePct = Math.round(rec.confidence * 100)
+                  const actionKey = `${selectedCluster.id}-${rec.type}`
+                  const userAction = userActions[actionKey]
+                  
+                  // Get recommendation details based on type
+                  const recDetails = {
+                    fertilizer: { title: 'Apply Fertilizer', icon: '🌱', desc: 'Optimize nutrient application' },
+                    pesticide: { title: 'Pest Control', icon: '🐛', desc: 'Address pest concerns' },
+                    pruning: { title: 'Schedule Pruning', icon: '✂️', desc: 'Improve plant health' },
+                    shade: { title: 'Manage Shade', icon: '🌳', desc: 'Optimize light exposure' },
+                    irrigation: { title: 'Water Management', icon: '💧', desc: 'Optimize irrigation' },
+                    soil_amendment: { title: 'Soil Amendment', icon: '🪨', desc: 'Improve soil conditions' }
+                  }
+                  const details = recDetails[rec.type] || { title: rec.type, icon: '📋', desc: '' }
+                  
+                  return (
+                    <div key={idx} className={`ml-rec-card ${userAction ? `action-${userAction}` : ''}`}>
+                      <div className="ml-rec-header">
+                        <span className="ml-rec-icon">{details.icon}</span>
+                        <div className="ml-rec-title">
+                          <span className="ml-rec-type">{details.title}</span>
+                          <span className="ml-rec-desc">{details.desc}</span>
+                        </div>
+                        <div className={`ml-confidence ${confidencePct >= 70 ? 'high' : confidencePct >= 40 ? 'medium' : 'low'}`}>
+                          {confidencePct}% confidence
+                        </div>
+                      </div>
+                      
+                      {/* Confidence bar */}
+                      <div className="ml-confidence-bar">
+                        <div 
+                          className="ml-confidence-fill" 
+                          style={{ width: `${confidencePct}%` }}
+                        />
+                      </div>
+                      
+                      {/* User Action Buttons */}
+                      <div className="ml-rec-actions">
+                        {userAction ? (
+                          <span className={`ml-action-done ${userAction}`}>
+                            {userAction === 'accepted' ? '✓ Accepted' : '✗ Declined'}
+                          </span>
+                        ) : (
+                          <>
+                            <button 
+                              className="ml-action-btn accept"
+                              onClick={() => handleUserAction(selectedCluster.id, rec.type, 'accepted')}
+                            >
+                              ✓ Accept
+                            </button>
+                            <button 
+                              className="ml-action-btn reject"
+                              onClick={() => handleUserAction(selectedCluster.id, rec.type, 'rejected')}
+                            >
+                              ✗ Decline
+                            </button>
+                          </>
+                        )}
+                      </div>
+                      
+                      {/* Why This Recommendation Toggle */}
+                      <button 
+                        className="ml-why-toggle"
+                        onClick={() => setShowWhyThis(prev => ({
+                          ...prev,
+                          [`${selectedCluster.id}-${rec.type}`]: !prev[`${selectedCluster.id}-${rec.type}`]
+                        }))}
+                      >
+                        <ChevronDown size={14} />
+                        Why this recommendation?
+                      </button>
+                      
+                      {/* Why This Explanation */}
+                      {showWhyThis[`${selectedCluster.id}-${rec.type}`] && (
+                        <div className="ml-why-content">
+                          <p><strong>Based on your cluster's data:</strong></p>
+                          <ul>
+                            <li>Plant age: {selectedCluster.stageData?.plantAgeMonths || 'N/A'} months</li>
+                            <li>Soil pH: {selectedCluster.stageData?.soilPh || 'N/A'}</li>
+                            <li>Current fertilizer: {selectedCluster.stageData?.fertilizerType || 'None'}</li>
+                            <li>Humidity: {selectedCluster.stageData?.humidity || 'N/A'}%</li>
+                          </ul>
+                          <p className="ml-model-info">
+                            <small>ML Model: RandomForest | Prediction class: {rec.predicted_class}</small>
+                          </p>
+                        </div>
+                      )}
+                      
+                      {rec.is_rule_based && (
+                        <span className="ml-fallback-badge">Rule-based fallback</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : mlError[selectedCluster.id] ? (
+              <div className="ml-error">
+                <AlertCircle size={16} />
+                <span>ML unavailable: {mlError[selectedCluster.id]}</span>
+              </div>
+            ) : null}
+
+            {/* Existing Rule-based Issues */}
+            <div className="rule-issues-header">
+              <h4>Rule-Based Analysis</h4>
             </div>
 
             {selectedCluster.issues.length === 0 ? (

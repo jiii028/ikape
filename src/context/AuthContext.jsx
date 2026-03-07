@@ -25,6 +25,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(false) // never loading — instant render
   const [error, setError] = useState('')
   const userRef = useRef(initial.user)
+  const isLoggingOutRef = useRef(false)
 
   // Keep ref in sync with user state
   useEffect(() => {
@@ -199,6 +200,9 @@ export function AuthProvider({ children }) {
 
     // Re-check session when window regains focus
     const handleFocus = async () => {
+      // Skip if logging out to prevent fetchProfile timeout from blocking logout
+      if (isLoggingOutRef.current) return
+      
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.user && !userRef.current) {
         setUser(session.user)
@@ -229,43 +233,109 @@ export function AuthProvider({ children }) {
   // ===== Registration =====
   const register = async (userData) => {
     setError('')
+    console.log('[register] Starting registration for:', userData.email)
 
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: userData.email,
-      password: userData.password,
-    })
+    try {
+      // Check for existing email/username before attempting auth signup
+      console.log('[register] Checking for existing email...')
+      const { data: existingEmail, error: emailCheckError } = await supabase.from('users').select('id').eq('email', userData.email).maybeSingle()
+      if (emailCheckError) {
+        console.error('[register] Email check error:', emailCheckError)
+      }
+      if (existingEmail) { 
+        const msg = 'An account with this email already exists.'
+        setError(msg)
+        return { success: false, error: msg } 
+      }
+      console.log('[register] Email check passed')
 
-    if (authError) { setError(authError.message); return { success: false } }
+      console.log('[register] Checking for existing username...')
+      const { data: takenUsername, error: usernameCheckError } = await supabase.from('users').select('id').eq('username', userData.username).maybeSingle()
+      if (usernameCheckError) {
+        console.error('[register] Username check error:', usernameCheckError)
+      }
+      if (takenUsername) { 
+        const msg = 'Username is already taken.'
+        setError(msg)
+        return { success: false, error: msg } 
+      }
+      console.log('[register] Username check passed')
 
-    const userId = authData.user?.id
-    if (!userId) { setError('Registration failed. Please try again.'); return { success: false } }
+      console.log('[register] Attempting Supabase auth signup...')
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: userData.email,
+        password: userData.password,
+        options: {
+          data: {
+            username: userData.username,
+            first_name: userData.firstName,
+            last_name: userData.lastName,
+          }
+        }
+      })
 
-    // Check if Supabase returned a fake session (email already exists in auth)
-    const requiresConfirmation = !authData.session
+      if (authError) { 
+        console.error('[register] Auth error:', authError)
+        // Provide more specific error messages
+        let msg = authError.message
+        const errorMsg = authError.message.toLowerCase()
+        if (authError.status === 429 || errorMsg.includes('rate limit') || errorMsg.includes('too many requests')) {
+          msg = 'Too many registration attempts. Please wait a few minutes before trying again.'
+        } else if (errorMsg.includes('email') || errorMsg.includes('already registered') || errorMsg.includes('already exists')) {
+          msg = 'This email is already registered in the authentication system. Please try logging in instead. If you forgot your password, use the Forgot Password link.'
+        } else if (errorMsg.includes('password')) {
+          msg = 'Password is too weak. Please use at least 6 characters with a mix of letters and numbers.'
+        } else if (errorMsg.includes('valid')) {
+          msg = 'Invalid email format. Please check your email address.'
+        }
+        setError(msg)
+        return { success: false, error: msg } 
+      }
 
-    const { data: existing } = await supabase.from('users').select('id').eq('email', userData.email).maybeSingle()
-    if (existing) { setError('An account with this email already exists.'); return { success: false } }
+      const userId = authData.user?.id
+      if (!userId) { 
+        const msg = 'Registration failed. No user ID returned.'
+        setError(msg)
+        return { success: false, error: msg } 
+      }
+      
+      console.log('[register] Auth signup successful, userId:', userId)
 
-    const { data: takenUsername } = await supabase.from('users').select('id').eq('username', userData.username).maybeSingle()
-    if (takenUsername) { setError('Username is already taken.'); return { success: false } }
+      // Check if Supabase returned a fake session (email already exists in auth)
+      const requiresConfirmation = !authData.session
+      console.log('[register] Requires confirmation:', requiresConfirmation)
 
-    const { error: profileError } = await supabase.from('users').upsert({
-      id: userId,
-      username: userData.username,
-      email: userData.email,
-      password_hash: 'supabase-auth-managed',
-      first_name: userData.firstName,
-      last_name: userData.lastName,
-      middle_initial: userData.middleInitial || null,
-      contact_number: userData.contactNumber,
-      age: parseInt(userData.age),
-      municipality: userData.municipality,
-      province: userData.province,
-      role: 'farmer',
-    }, { onConflict: 'id' })
+      console.log('[register] Inserting user profile...')
+      const { error: profileError } = await supabase.from('users').insert({
+        id: userId,
+        username: userData.username,
+        email: userData.email,
+        password_hash: 'supabase-auth-managed',
+        first_name: userData.firstName,
+        last_name: userData.lastName,
+        middle_initial: userData.middleInitial || null,
+        contact_number: userData.contactNumber,
+        age: parseInt(userData.age),
+        municipality: userData.municipality,
+        province: userData.province,
+        role: 'farmer',
+      })
 
-    if (profileError) { setError(profileError.message); return { success: false } }
-    return { success: true, requiresConfirmation }
+      if (profileError) { 
+        console.error('[register] Profile insert error:', profileError)
+        const msg = 'Error creating user profile: ' + profileError.message
+        setError(msg)
+        return { success: false, error: msg } 
+      }
+      
+      console.log('[register] Registration successful!')
+      return { success: true, requiresConfirmation }
+    } catch (err) {
+      console.error('[register] Unexpected error:', err)
+      const msg = 'Unexpected error during registration: ' + (err.message || 'Unknown error')
+      setError(msg)
+      return { success: false, error: msg }
+    }
   }
 
   // ===== Login =====
@@ -362,15 +432,22 @@ export function AuthProvider({ children }) {
 
   // ===== Logout =====
   const logout = async () => {
+    // Set flag to prevent fetchProfile from running during logout
+    isLoggingOutRef.current = true
+    
     // Clear local state FIRST so route guards react instantly
     setUser(null)
     setProfile(null)
     clearUserSession()
+    
     // Then attempt Supabase signOut (non-blocking, may fail for dev-bypass sessions)
     try {
       await supabase.auth.signOut()
     } catch (e) {
       console.warn('Supabase signOut failed (expected for dev-bypass sessions):', e.message)
+    } finally {
+      // Reset flag after logout completes
+      isLoggingOutRef.current = false
     }
   }
 

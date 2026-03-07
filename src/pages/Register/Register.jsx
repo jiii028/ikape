@@ -256,7 +256,9 @@ export default function Register() {
           redirectToLogin(message)
         }, 1300)
       } else {
-        setError(error || 'Account registration was not successful. Please review your details and try again.')
+        // Use the error returned from register function, fall back to context error or generic message
+        const errorMessage = result?.error || error || 'Account registration was not successful. Please review your details and try again.'
+        setError(errorMessage)
       }
     } catch (submitError) {
       console.error('Registration submit failed:', submitError)
